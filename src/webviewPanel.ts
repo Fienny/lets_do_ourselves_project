@@ -1,282 +1,448 @@
 import * as vscode from 'vscode';
+import { MentorMode, getModeLabel, ChatMessage } from './openaiClient';
 
-export type AnalysisMode = 'project' | 'file' | 'selection' | 'idle';
+export interface WebviewIncomingMessage {
+  type: 'sendMessage' | 'setMode' | 'setApiKey' | 'clearChat' | 'attachFile' | 'attachSelection';
+  text?: string;
+  mode?: MentorMode;
+}
 
-export interface WebviewMessage {
-  type: 'ready' | 'setApiKey' | 'analyzeProject' | 'analyzeFile' | 'explainSelection' | 'cancel';
+export interface WebviewOutgoingMessage {
+  type: 'streamStart' | 'streamChunk' | 'streamDone' | 'error' | 'modeChanged' | 'contextAttached';
+  text?: string;
+  mode?: MentorMode;
+  modeLabel?: string;
+  contextInfo?: string;
 }
 
 /**
- * Manages the sidebar webview panel that displays analysis results.
+ * Manages the sidebar chat panel.
  */
 export class AdvisorPanel {
   private _webview: vscode.Webview;
 
   constructor(webview: vscode.Webview) {
     this._webview = webview;
-    this._webview.options = {
-      enableScripts: true,
-    };
+    this._webview.options = { enableScripts: true };
     this._webview.html = this._getHtml();
   }
 
-  /** Called by extension to stream text into the panel */
-  appendText(text: string): void {
-    this._webview.postMessage({ type: 'append', text });
+  post(msg: WebviewOutgoingMessage): void {
+    this._webview.postMessage(msg);
   }
 
-  /** Called when streaming is complete */
-  done(): void {
-    this._webview.postMessage({ type: 'done' });
+  streamStart(): void {
+    this.post({ type: 'streamStart' });
   }
 
-  /** Show an error message */
+  streamChunk(text: string): void {
+    this.post({ type: 'streamChunk', text });
+  }
+
+  streamDone(): void {
+    this.post({ type: 'streamDone' });
+  }
+
   showError(message: string): void {
-    this._webview.postMessage({ type: 'error', message });
+    this.post({ type: 'error', text: message });
   }
 
-  /** Show loading state */
-  showLoading(message: string): void {
-    this._webview.postMessage({ type: 'loading', message });
+  notifyModeChanged(mode: MentorMode): void {
+    this.post({ type: 'modeChanged', mode, modeLabel: getModeLabel(mode) });
   }
 
-  /** Reset to idle state */
-  reset(): void {
-    this._webview.postMessage({ type: 'reset' });
+  notifyContextAttached(info: string): void {
+    this.post({ type: 'contextAttached', contextInfo: info });
   }
 
-  /** Handle messages coming FROM the webview */
-  onMessage(handler: (msg: WebviewMessage) => void): vscode.Disposable {
+  onMessage(handler: (msg: WebviewIncomingMessage) => void): vscode.Disposable {
     return this._webview.onDidReceiveMessage(handler);
   }
 
   private _getHtml(): string {
-    return /* html */ `<!DOCTYPE html>
+    return /* html */`<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Let's Do Ourselves</title>
+  <title>Let's Code Ourselves</title>
   <style>
     :root {
-      --bg: var(--vscode-editor-background);
-      --fg: var(--vscode-editor-foreground);
-      --border: var(--vscode-panel-border);
-      --accent: var(--vscode-button-background);
-      --accent-fg: var(--vscode-button-foreground);
-      --accent-hover: var(--vscode-button-hoverBackground);
-      --input-bg: var(--vscode-input-background);
-      --input-fg: var(--vscode-input-foreground);
-      --input-border: var(--vscode-input-border);
-      --error: var(--vscode-errorForeground);
-      --badge: var(--vscode-badge-background);
-      --badge-fg: var(--vscode-badge-foreground);
-      --font: var(--vscode-font-family);
-      --font-size: var(--vscode-font-size);
+      --bg:          var(--vscode-editor-background);
+      --fg:          var(--vscode-editor-foreground);
+      --border:      var(--vscode-panel-border);
+      --accent:      var(--vscode-button-background);
+      --accent-fg:   var(--vscode-button-foreground);
+      --accent-h:    var(--vscode-button-hoverBackground);
+      --input-bg:    var(--vscode-input-background);
+      --input-fg:    var(--vscode-input-foreground);
+      --input-bd:    var(--vscode-input-border);
+      --user-bg:     var(--vscode-badge-background);
+      --user-fg:     var(--vscode-badge-foreground);
+      --mentor-bg:   var(--vscode-editor-inactiveSelectionBackground);
+      --error:       var(--vscode-errorForeground);
+      --font:        var(--vscode-font-family);
+      --font-sz:     var(--vscode-font-size);
     }
-
-    * { box-sizing: border-box; margin: 0; padding: 0; }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
       background: var(--bg);
       color: var(--fg);
       font-family: var(--font);
-      font-size: var(--font-size);
-      padding: 12px;
-      line-height: 1.6;
-    }
-
-    h1 {
-      font-size: 1.1em;
-      font-weight: 700;
-      margin-bottom: 4px;
-      color: var(--fg);
-    }
-
-    .tagline {
-      font-size: 0.85em;
-      opacity: 0.7;
-      margin-bottom: 16px;
-    }
-
-    .btn-row {
+      font-size: var(--font-sz);
       display: flex;
       flex-direction: column;
-      gap: 6px;
-      margin-bottom: 16px;
+      height: 100vh;
+      overflow: hidden;
     }
 
-    button {
-      background: var(--accent);
-      color: var(--accent-fg);
-      border: none;
-      border-radius: 4px;
-      padding: 7px 12px;
-      cursor: pointer;
-      font-size: 0.9em;
-      font-family: var(--font);
-      text-align: left;
-      transition: background 0.15s;
+    /* ── Header ── */
+    .header {
+      padding: 10px 12px 8px;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
     }
-
-    button:hover:not(:disabled) { background: var(--accent-hover); }
-    button:disabled { opacity: 0.5; cursor: not-allowed; }
-
-    button.secondary {
+    .header h1 { font-size: 1em; font-weight: 700; margin-bottom: 6px; }
+    .mode-row { display: flex; gap: 4px; flex-wrap: wrap; }
+    .mode-btn {
       background: transparent;
       border: 1px solid var(--border);
       color: var(--fg);
+      border-radius: 12px;
+      padding: 3px 10px;
+      font-size: 0.78em;
+      cursor: pointer;
+      font-family: var(--font);
+      transition: all 0.15s;
+      opacity: 0.7;
+    }
+    .mode-btn:hover { opacity: 1; background: var(--input-bg); }
+    .mode-btn.active {
+      background: var(--accent);
+      color: var(--accent-fg);
+      border-color: var(--accent);
+      opacity: 1;
     }
 
-    button.secondary:hover:not(:disabled) {
+    /* ── Context badge ── */
+    .context-bar {
+      padding: 5px 12px;
+      font-size: 0.78em;
       background: var(--input-bg);
+      border-bottom: 1px solid var(--border);
+      display: none;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
     }
-
-    .divider {
+    .context-bar.visible { display: flex; }
+    .context-bar button {
+      background: transparent;
       border: none;
-      border-top: 1px solid var(--border);
-      margin: 12px 0;
-    }
-
-    #status {
-      font-size: 0.82em;
-      opacity: 0.75;
-      min-height: 1.4em;
-      margin-bottom: 8px;
-    }
-
-    #output {
-      white-space: pre-wrap;
-      word-break: break-word;
-      line-height: 1.65;
+      color: var(--fg);
+      cursor: pointer;
+      opacity: 0.6;
       font-size: 0.9em;
+      padding: 0 3px;
+    }
+    .context-bar button:hover { opacity: 1; }
+
+    /* ── Chat messages ── */
+    .messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
     }
 
-    #output h2 { font-size: 1em; margin-top: 14px; margin-bottom: 4px; }
-    #output h3 { font-size: 0.95em; margin-top: 10px; margin-bottom: 3px; }
-    #output ul, #output ol { padding-left: 18px; margin: 4px 0; }
-    #output li { margin-bottom: 3px; }
-    #output strong { font-weight: 700; }
+    .msg {
+      max-width: 92%;
+      padding: 8px 11px;
+      border-radius: 10px;
+      line-height: 1.55;
+      font-size: 0.9em;
+      word-break: break-word;
+      white-space: pre-wrap;
+    }
+    .msg.user {
+      align-self: flex-end;
+      background: var(--user-bg);
+      color: var(--user-fg);
+      border-bottom-right-radius: 3px;
+    }
+    .msg.mentor {
+      align-self: flex-start;
+      background: var(--mentor-bg);
+      border-bottom-left-radius: 3px;
+    }
+    .msg.mentor h2 { font-size: 0.95em; margin: 8px 0 3px; }
+    .msg.mentor h3 { font-size: 0.9em; margin: 6px 0 2px; }
+    .msg.mentor strong { font-weight: 700; }
+    .msg.mentor ul, .msg.mentor ol { padding-left: 16px; margin: 4px 0; }
+    .msg.mentor li { margin-bottom: 2px; }
+    .msg.error {
+      align-self: stretch;
+      background: transparent;
+      border: 1px solid var(--error);
+      color: var(--error);
+      font-size: 0.82em;
+    }
 
     .cursor {
       display: inline-block;
       width: 2px;
-      height: 1em;
+      height: 0.9em;
       background: var(--fg);
-      animation: blink 0.8s step-end infinite;
+      animation: blink 0.7s step-end infinite;
       vertical-align: text-bottom;
       margin-left: 1px;
     }
+    @keyframes blink { 50% { opacity: 0; } }
 
-    @keyframes blink {
-      50% { opacity: 0; }
-    }
-
-    .error {
-      color: var(--error);
+    /* ── Empty state ── */
+    .empty {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      opacity: 0.45;
       font-size: 0.88em;
-      padding: 8px;
-      border: 1px solid var(--error);
-      border-radius: 4px;
+      text-align: center;
+      gap: 8px;
+      padding: 20px;
     }
+    .empty-icon { font-size: 2em; }
 
-    .badge {
-      background: var(--badge);
-      color: var(--badge-fg);
-      border-radius: 10px;
-      padding: 1px 7px;
-      font-size: 0.75em;
-      margin-left: 6px;
+    /* ── Input area ── */
+    .input-area {
+      border-top: 1px solid var(--border);
+      padding: 8px 10px;
+      flex-shrink: 0;
     }
-
-    .no-key-notice {
+    .input-row {
+      display: flex;
+      gap: 6px;
+      align-items: flex-end;
+    }
+    textarea {
+      flex: 1;
       background: var(--input-bg);
-      border: 1px solid var(--input-border);
+      color: var(--input-fg);
+      border: 1px solid var(--input-bd);
+      border-radius: 6px;
+      padding: 7px 9px;
+      font-family: var(--font);
+      font-size: 0.9em;
+      resize: none;
+      min-height: 36px;
+      max-height: 120px;
+      line-height: 1.4;
+    }
+    textarea:focus { outline: 1px solid var(--accent); }
+    .send-btn {
+      background: var(--accent);
+      color: var(--accent-fg);
+      border: none;
+      border-radius: 6px;
+      padding: 7px 13px;
+      cursor: pointer;
+      font-size: 0.9em;
+      height: 36px;
+      flex-shrink: 0;
+      transition: background 0.15s;
+    }
+    .send-btn:hover:not(:disabled) { background: var(--accent-h); }
+    .send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .action-row {
+      display: flex;
+      gap: 6px;
+      margin-top: 6px;
+      flex-wrap: wrap;
+    }
+    .action-btn {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--fg);
       border-radius: 4px;
-      padding: 10px;
-      font-size: 0.85em;
-      margin-bottom: 12px;
+      padding: 3px 9px;
+      font-size: 0.78em;
+      cursor: pointer;
+      font-family: var(--font);
+      opacity: 0.75;
     }
-
-    .spinning::after {
-      content: '';
-      display: inline-block;
-      width: 10px;
-      height: 10px;
-      border: 2px solid var(--accent-fg);
-      border-top-color: transparent;
-      border-radius: 50%;
-      animation: spin 0.7s linear infinite;
-      margin-left: 8px;
-      vertical-align: middle;
-    }
-
-    @keyframes spin { to { transform: rotate(360deg); } }
+    .action-btn:hover { opacity: 1; background: var(--input-bg); }
   </style>
 </head>
 <body>
-  <h1>Let's Do Ourselves</h1>
-  <p class="tagline">AI code advisor — explanations, not code generation</p>
-
-  <div class="btn-row">
-    <button id="btn-project" onclick="send('analyzeProject')">
-      🔍 Analyze Entire Project
-    </button>
-    <button id="btn-file" onclick="send('analyzeFile')">
-      📄 Analyze Current File
-    </button>
-    <button id="btn-selection" onclick="send('explainSelection')">
-      ❓ Explain Selected Code
-    </button>
+  <!-- Header with mode switcher -->
+  <div class="header">
+    <h1>Let's Code Ourselves</h1>
+    <div class="mode-row">
+      <button class="mode-btn active" data-mode="learn"  onclick="setMode('learn')">🧠 Learn</button>
+      <button class="mode-btn"        data-mode="hint"   onclick="setMode('hint')">💡 Hint</button>
+      <button class="mode-btn"        data-mode="emergency" onclick="setMode('emergency')">🚨 Emergency</button>
+    </div>
   </div>
 
-  <hr class="divider" />
+  <!-- Context indicator (shown when file/selection is attached) -->
+  <div class="context-bar" id="ctx-bar">
+    <span id="ctx-label">📎 No context</span>
+    <button onclick="clearContext()" title="Remove context">✕</button>
+  </div>
 
-  <button class="secondary" onclick="send('setApiKey')" style="font-size:0.82em; padding:5px 10px;">
-    🔑 Set OpenAI API Key
-  </button>
+  <!-- Messages -->
+  <div class="messages" id="messages">
+    <div class="empty" id="empty-state">
+      <div class="empty-icon">🧠</div>
+      <div><strong>Ask me about your code.</strong></div>
+      <div>I won't give you answers — I'll help you find them yourself.</div>
+    </div>
+  </div>
 
-  <hr class="divider" />
-
-  <div id="status"></div>
-  <div id="output"></div>
+  <!-- Input -->
+  <div class="input-area">
+    <div class="input-row">
+      <textarea
+        id="input"
+        placeholder="Ask a question about your code..."
+        rows="1"
+        onkeydown="handleKey(event)"
+        oninput="autoResize(this)"
+      ></textarea>
+      <button class="send-btn" id="send-btn" onclick="sendMessage()">Send</button>
+    </div>
+    <div class="action-row">
+      <button class="action-btn" onclick="attachFile()">📄 Attach current file</button>
+      <button class="action-btn" onclick="attachSelection()">✂️ Attach selection</button>
+      <button class="action-btn" onclick="clearChat()">🗑 Clear chat</button>
+      <button class="action-btn" onclick="setApiKey()">🔑 API Key</button>
+    </div>
+  </div>
 
   <script>
     const vscode = acquireVsCodeApi();
     let isStreaming = false;
-    let cursor = null;
+    let currentMode = 'learn';
+    let streamingEl = null;
+    let rawBuffer = '';
 
-    function send(type) {
-      vscode.postMessage({ type });
+    // ── Send ──────────────────────────────────────────────────────────────────
+    function sendMessage() {
+      const input = document.getElementById('input');
+      const text = input.value.trim();
+      if (!text || isStreaming) return;
+
+      hideEmpty();
+      appendUserMessage(text);
+      input.value = '';
+      autoResize(input);
+
+      vscode.postMessage({ type: 'sendMessage', text });
     }
 
-    function setButtons(disabled) {
-      ['btn-project', 'btn-file', 'btn-selection'].forEach(id => {
-        document.getElementById(id).disabled = disabled;
-      });
-    }
-
-    function setStatus(text, spinning = false) {
-      const el = document.getElementById('status');
-      el.textContent = text;
-      el.className = spinning ? 'spinning' : '';
-    }
-
-    function addCursor() {
-      removeCursor();
-      cursor = document.createElement('span');
-      cursor.className = 'cursor';
-      document.getElementById('output').appendChild(cursor);
-    }
-
-    function removeCursor() {
-      if (cursor) {
-        cursor.remove();
-        cursor = null;
+    function handleKey(e) {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendMessage();
       }
     }
 
-    // Minimal markdown rendering (headings + bold only; no code blocks)
+    function autoResize(el) {
+      el.style.height = 'auto';
+      el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+    }
+
+    // ── Mode ──────────────────────────────────────────────────────────────────
+    function setMode(mode) {
+      currentMode = mode;
+      document.querySelectorAll('.mode-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.mode === mode);
+      });
+      vscode.postMessage({ type: 'setMode', mode });
+    }
+
+    // ── Context ───────────────────────────────────────────────────────────────
+    function attachFile()      { vscode.postMessage({ type: 'attachFile' }); }
+    function attachSelection() { vscode.postMessage({ type: 'attachSelection' }); }
+    function clearContext() {
+      document.getElementById('ctx-bar').classList.remove('visible');
+      vscode.postMessage({ type: 'attachFile', clear: true });
+    }
+
+    function setApiKey() { vscode.postMessage({ type: 'setApiKey' }); }
+    function clearChat() { vscode.postMessage({ type: 'clearChat' }); }
+
+    // ── DOM helpers ───────────────────────────────────────────────────────────
+    function hideEmpty() {
+      const el = document.getElementById('empty-state');
+      if (el) el.remove();
+    }
+
+    function appendUserMessage(text) {
+      const msgs = document.getElementById('messages');
+      const div = document.createElement('div');
+      div.className = 'msg user';
+      div.textContent = text;
+      msgs.appendChild(div);
+      scrollBottom();
+    }
+
+    function startMentorMessage() {
+      const msgs = document.getElementById('messages');
+      const div = document.createElement('div');
+      div.className = 'msg mentor';
+      rawBuffer = '';
+      const cursor = document.createElement('span');
+      cursor.className = 'cursor';
+      cursor.id = 'stream-cursor';
+      div.appendChild(cursor);
+      msgs.appendChild(div);
+      streamingEl = div;
+      scrollBottom();
+    }
+
+    function appendToMentor(text) {
+      if (!streamingEl) return;
+      rawBuffer += text;
+      const cursor = streamingEl.querySelector('.cursor');
+      streamingEl.innerHTML = renderMarkdown(rawBuffer);
+      if (cursor) streamingEl.appendChild(cursor);
+      scrollBottom();
+    }
+
+    function finalizeMentor() {
+      if (!streamingEl) return;
+      const cursor = streamingEl.querySelector('.cursor');
+      if (cursor) cursor.remove();
+      streamingEl = null;
+    }
+
+    function showError(message) {
+      const msgs = document.getElementById('messages');
+      const div = document.createElement('div');
+      div.className = 'msg error';
+      div.textContent = message;
+      msgs.appendChild(div);
+      scrollBottom();
+    }
+
+    function scrollBottom() {
+      const msgs = document.getElementById('messages');
+      msgs.scrollTop = msgs.scrollHeight;
+    }
+
+    function setStreaming(val) {
+      isStreaming = val;
+      document.getElementById('send-btn').disabled = val;
+      document.getElementById('input').disabled = val;
+    }
+
+    // Minimal markdown: headings, bold, lists — NO code blocks
     function renderMarkdown(raw) {
       return raw
         .replace(/^### (.+)$/gm, '<h3>$1</h3>')
@@ -284,61 +450,51 @@ export class AdvisorPanel {
         .replace(/^# (.+)$/gm, '<h2>$1</h2>')
         .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
         .replace(/^- (.+)$/gm, '<li>$1</li>')
-        .replace(/(<li>.*<\/li>(\n|$))+/g, '<ul>$&</ul>');
+        .replace(/(<li>[^]*?<\/li>\n?)+/g, m => '<ul>' + m + '</ul>');
     }
 
-    let rawBuffer = '';
-
-    window.addEventListener('message', event => {
-      const msg = event.data;
-      const output = document.getElementById('output');
-
+    // ── Message handler ───────────────────────────────────────────────────────
+    window.addEventListener('message', e => {
+      const msg = e.data;
       switch (msg.type) {
-        case 'loading':
-          rawBuffer = '';
-          output.innerHTML = '';
-          setStatus(msg.message, true);
-          setButtons(true);
-          isStreaming = true;
+        case 'streamStart':
+          setStreaming(true);
+          startMentorMessage();
           break;
-
-        case 'append':
-          removeCursor();
-          rawBuffer += msg.text;
-          output.innerHTML = renderMarkdown(rawBuffer);
-          addCursor();
-          output.scrollTop = output.scrollHeight;
+        case 'streamChunk':
+          appendToMentor(msg.text);
           break;
-
-        case 'done':
-          removeCursor();
-          setStatus('Analysis complete.');
-          setButtons(false);
-          isStreaming = false;
+        case 'streamDone':
+          finalizeMentor();
+          setStreaming(false);
           break;
-
         case 'error':
-          removeCursor();
-          output.innerHTML = '<div class="error">' + escapeHtml(msg.message) + '</div>';
-          setStatus('');
-          setButtons(false);
-          isStreaming = false;
+          finalizeMentor();
+          showError(msg.text);
+          setStreaming(false);
           break;
-
-        case 'reset':
-          rawBuffer = '';
-          output.innerHTML = '';
-          setStatus('');
-          setButtons(false);
-          isStreaming = false;
-          removeCursor();
+        case 'modeChanged':
+          // Sync mode buttons if changed from outside
+          document.querySelectorAll('.mode-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.mode === msg.mode);
+          });
+          currentMode = msg.mode;
+          break;
+        case 'contextAttached':
+          const bar = document.getElementById('ctx-bar');
+          const label = document.getElementById('ctx-label');
+          label.textContent = '📎 ' + msg.contextInfo;
+          bar.classList.add('visible');
+          hideEmpty();
+          break;
+        case 'clearChat':
+          document.getElementById('messages').innerHTML =
+            '<div class="empty" id="empty-state"><div class="empty-icon">🧠</div>' +
+            '<div><strong>Ask me about your code.</strong></div>' +
+            '<div>I won\'t give you answers — I\'ll help you find them yourself.</div></div>';
           break;
       }
     });
-
-    function escapeHtml(str) {
-      return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-    }
   </script>
 </body>
 </html>`;
