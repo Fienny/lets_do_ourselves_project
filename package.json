@@ -1,0 +1,142 @@
+{
+  "name": "lets-do-ourselves",
+  "displayName": "Let's Do Ourselves - Code Advisor",
+  "description": "AI-powered best practices advisor that explains what's wrong and why — no code generation, pure guidance.",
+  "version": "0.1.0",
+  "publisher": "lets-do-ourselves",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Education",
+    "Linters",
+    "Other"
+  ],
+  "keywords": [
+    "best practices",
+    "code review",
+    "AI advisor",
+    "learning",
+    "explanation"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "ldo.analyzeProject",
+        "title": "Analyze Entire Project",
+        "category": "Let's Do Ourselves"
+      },
+      {
+        "command": "ldo.analyzeFile",
+        "title": "Analyze Current File",
+        "category": "Let's Do Ourselves"
+      },
+      {
+        "command": "ldo.explainSelection",
+        "title": "Explain Selected Code",
+        "category": "Let's Do Ourselves"
+      },
+      {
+        "command": "ldo.setApiKey",
+        "title": "Set OpenAI API Key",
+        "category": "Let's Do Ourselves"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "ldo.explainSelection",
+          "when": "editorHasSelection",
+          "group": "ldo@1"
+        },
+        {
+          "command": "ldo.analyzeFile",
+          "group": "ldo@2"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "ldo.analyzeProject",
+          "group": "ldo@1"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Let's Do Ourselves",
+      "properties": {
+        "ldo.openaiModel": {
+          "type": "string",
+          "default": "gpt-4o",
+          "enum": ["gpt-4o", "gpt-4-turbo", "gpt-4", "gpt-3.5-turbo"],
+          "description": "OpenAI model to use for analysis"
+        },
+        "ldo.maxFileSizeKb": {
+          "type": "number",
+          "default": 100,
+          "description": "Maximum file size in KB to include in analysis"
+        },
+        "ldo.excludePatterns": {
+          "type": "array",
+          "default": [
+            "**/node_modules/**",
+            "**/.git/**",
+            "**/dist/**",
+            "**/build/**",
+            "**/*.min.js",
+            "**/*.lock",
+            "**/package-lock.json"
+          ],
+          "description": "Glob patterns to exclude from analysis"
+        },
+        "ldo.language": {
+          "type": "string",
+          "default": "English",
+          "description": "Language for explanations and suggestions"
+        }
+      }
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "ldo-sidebar",
+          "title": "Let's Do Ourselves",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "ldo-sidebar": [
+        {
+          "type": "webview",
+          "id": "ldo.advisorView",
+          "name": "Code Advisor"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile",
+    "test": "node ./out/test/runTest.js",
+    "package": "vsce package",
+    "lint": "eslint src --ext ts"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.85.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "eslint": "^8.0.0",
+    "typescript": "^5.3.0",
+    "@vscode/test-electron": "^2.3.0"
+  },
+  "dependencies": {
+    "openai": "^4.28.0"
+  }
+}
