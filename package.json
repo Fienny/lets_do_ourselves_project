@@ -45,6 +45,16 @@
         "command": "ldo.attachProject",
         "title": "Attach Entire Project to Chat",
         "category": "Let's Code Ourselves"
+      },
+      {
+        "command": "ldo.login",
+        "title": "Log In",
+        "category": "Let's Code Ourselves"
+      },
+      {
+        "command": "ldo.register",
+        "title": "Create Account",
+        "category": "Let's Code Ourselves"
       }
     ],
     "menus": {
@@ -63,6 +73,11 @@
     "configuration": {
       "title": "Let's Code Ourselves",
       "properties": {
+        "ldo.backendUrl": {
+          "type": "string",
+          "default": "",
+          "description": "URL of the Let's Code Ourselves backend (e.g. https://api.lets-code-ourselves.com). When set, the extension authenticates via the backend instead of using a direct OpenAI key."
+        },
         "ldo.openaiModel": {
           "type": "string",
           "default": "gpt-4o",

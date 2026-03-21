@@ -1,6 +1,10 @@
 import * as vscode from 'vscode';
 import { scanCurrentFile, getSelectedCode, scanProject } from './fileScanner';
-import { streamChat, setApiKey, getApiKey, MentorMode, ChatMessage } from './openaiClient';
+import {
+  streamChat, setApiKey, getApiKey,
+  setBackendToken, getBackendToken,
+  MentorMode, ChatMessage,
+} from './openaiClient';
 import {
   buildFileContext,
   buildSelectionContext,
@@ -75,7 +79,7 @@ export function activate(context: vscode.ExtensionContext): void {
       const existing = await getApiKey(context);
       const key = await vscode.window.showInputBox({
         title: "Let's Code Ourselves — OpenAI API Key",
-        prompt: 'Enter your OpenAI API key (stored securely)',
+        prompt: 'Enter your OpenAI API key (stored securely, used only in direct mode)',
         password: true,
         value: existing ? '••••••••' : '',
         validateInput: (v) =>
@@ -84,6 +88,103 @@ export function activate(context: vscode.ExtensionContext): void {
       if (key && key !== '••••••••') {
         await setApiKey(context, key.trim());
         vscode.window.showInformationMessage("API key saved. Let's Code Ourselves is ready!");
+      }
+    })
+  );
+
+  // Backend login — registers / logs in and stores the JWT token
+  context.subscriptions.push(
+    vscode.commands.registerCommand('ldo.login', async () => {
+      const config = vscode.workspace.getConfiguration('ldo');
+      const backendUrl: string = config.get('backendUrl', '').trim();
+
+      if (!backendUrl) {
+        vscode.window.showErrorMessage(
+          'Set ldo.backendUrl in settings first, then log in.'
+        );
+        return;
+      }
+
+      const email = await vscode.window.showInputBox({
+        title: "Let's Code Ourselves — Log in",
+        prompt: 'Email address',
+        validateInput: (v) => v.includes('@') ? null : 'Enter a valid email',
+      });
+      if (!email) return;
+
+      const password = await vscode.window.showInputBox({
+        title: "Let's Code Ourselves — Log in",
+        prompt: 'Password',
+        password: true,
+      });
+      if (!password) return;
+
+      try {
+        const res = await fetch(`${backendUrl}/auth/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({ username: email, password }),
+        });
+
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body.detail || `HTTP ${res.status}`);
+        }
+
+        const { access_token } = await res.json();
+        await setBackendToken(context, access_token);
+        vscode.window.showInformationMessage(`Logged in as ${email}. Let's code!`);
+      } catch (err: unknown) {
+        vscode.window.showErrorMessage(`Login failed: ${String(err)}`);
+      }
+    })
+  );
+
+  // Register new account
+  context.subscriptions.push(
+    vscode.commands.registerCommand('ldo.register', async () => {
+      const config = vscode.workspace.getConfiguration('ldo');
+      const backendUrl: string = config.get('backendUrl', '').trim();
+
+      if (!backendUrl) {
+        vscode.window.showErrorMessage('Set ldo.backendUrl in settings first.');
+        return;
+      }
+
+      const email = await vscode.window.showInputBox({
+        title: "Let's Code Ourselves — Create Account",
+        prompt: 'Email address',
+        validateInput: (v) => v.includes('@') ? null : 'Enter a valid email',
+      });
+      if (!email) return;
+
+      const password = await vscode.window.showInputBox({
+        title: "Let's Code Ourselves — Create Account",
+        prompt: 'Password (min 8 characters)',
+        password: true,
+        validateInput: (v) => v.length >= 8 ? null : 'At least 8 characters',
+      });
+      if (!password) return;
+
+      try {
+        const res = await fetch(`${backendUrl}/auth/register`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password }),
+        });
+
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body.detail || `HTTP ${res.status}`);
+        }
+
+        const { access_token } = await res.json();
+        await setBackendToken(context, access_token);
+        vscode.window.showInformationMessage(
+          `Account created! Welcome to Let's Code Ourselves.`
+        );
+      } catch (err: unknown) {
+        vscode.window.showErrorMessage(`Registration failed: ${String(err)}`);
       }
     })
   );
@@ -172,23 +273,23 @@ function handleUserMessage(
 
   let assistantReply = '';
 
-  streamChat(
-    context,
-    state.mode,
-    state.history,
-    (chunk) => {
+  streamChat(context, state.mode, state.history, {
+    onChunk(chunk) {
       assistantReply += chunk;
       panel.streamChunk(chunk);
     },
-    () => {
+    onReplace(fullText) {
+      // Rule engine redacted something — replace the whole message
+      assistantReply = fullText;
+      panel.replaceLastMessage(fullText);
+    },
+    onDone() {
       panel.streamDone();
-      // Add assistant reply to history
       state.history.push({ role: 'assistant', content: assistantReply });
     },
-    (err) => {
+    onError(err) {
       panel.showError(err.message);
-      // Remove the failed user message from history
-      state.history.pop();
-    }
-  );
+      state.history.pop(); // remove the failed user message
+    },
+  });
 }

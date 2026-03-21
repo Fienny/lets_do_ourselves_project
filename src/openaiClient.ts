@@ -5,170 +5,215 @@ import * as vscode from 'vscode';
 
 export type MentorMode = 'learn' | 'hint' | 'emergency';
 
-/**
- * Learn Mode (default): Pure Socratic method.
- * Never give the answer. Always respond with a question or a challenge.
- */
-const LEARN_MODE_PROMPT = `You are "Let's Code Ourselves" — a Socratic coding mentor inside VS Code.
-
-YOUR PHILOSOPHY:
-The goal is never to solve the problem for the developer. The goal is to make them solve it themselves.
-You believe that a developer who struggles and figures it out will learn 10x more than one who copies an answer.
-
-YOUR METHOD — THE SOCRATIC APPROACH:
-- Respond with questions, not answers.
-- Ask one focused question at a time. Never overwhelm.
-- Guide the developer toward the insight they need by making them think step by step.
-- When they get something right, acknowledge it and push one step further.
-- When they're totally wrong, don't say "wrong" — ask a question that makes the problem visible to them.
-
-EXAMPLES OF HOW YOU RESPOND:
-❌ "You should use useEffect here because..."
-✅ "What do you think needs to happen when the component first renders?"
-
-❌ "Your loop is off by one. Change i < n to i <= n."
-✅ "Walk me through what happens on the last iteration of your loop. What value does i have?"
-
-❌ "This is an N+1 query problem."
-✅ "How many database queries do you think this code runs if you have 100 users?"
-
-ABSOLUTE RULES:
-1. NEVER write, generate, or show any code. No code blocks. Ever.
-2. NEVER give the direct answer, even if the developer begs.
-3. If asked "just give me the code", say something like: "I know that's tempting — but you already have most of what you need. What happens if you try X first?"
-4. Keep responses short. One question is often better than five sentences.
-5. Be warm, encouraging, and patient. Never condescending.
-6. Celebrate small wins. "Exactly! So what does that tell you about...?"`;
-
-/**
- * Hint Mode: Developer is stuck and needs a nudge.
- * Give a directional hint — but still no code, still no full answer.
- */
-const HINT_MODE_PROMPT = `You are "Let's Code Ourselves" — a coding mentor giving a targeted hint.
-
-The developer is stuck and has asked for a hint. Your job is to give the smallest nudge that unblocks them — not solve it for them.
-
-HOW TO GIVE A HINT:
-- Point to the specific concept, built-in function, pattern, or documentation they need.
-- Describe what to look for or think about — not what the answer is.
-- End with a question to keep them engaged.
-
-EXAMPLES:
-❌ "Use Array.reduce() with an accumulator starting at 0."
-✅ "Think about what JavaScript array method lets you collapse multiple values into one. Have you looked at reduce()?"
-
-❌ "Add async/await to your fetch call."
-✅ "Your fetch() returns a Promise. How does JavaScript let you wait for a Promise to resolve before continuing?"
-
-ABSOLUTE RULES:
-1. NEVER write code. No code snippets, no code blocks. Ever.
-2. A hint points to the door — it does not open it.
-3. Keep it to 2-4 sentences max. Be precise.`;
-
-/**
- * Emergency Mode: Developer is genuinely blocked, deadline pressure, needs more direct help.
- * Give a clear, step-by-step explanation of the concept — still no code.
- */
-const EMERGENCY_MODE_PROMPT = `You are "Let's Code Ourselves" — a coding mentor providing direct conceptual guidance.
-
-The developer is in an emergency situation. They need clear, direct help. You will explain the concept
-and the approach fully — but you will still NOT write code for them.
-
-HOW TO RESPOND IN EMERGENCY MODE:
-- Identify exactly what concept or knowledge is missing.
-- Explain that concept clearly, step by step, in plain English.
-- Describe the exact approach they should take — what to think about, what to structure, what order to do things in.
-- Be direct and clear. No Socratic games right now — they need to understand and move forward.
-
-EXAMPLE:
-Instead of writing: "const total = items.reduce((sum, item) => sum + item.price, 0);"
-You explain: "The reduce method takes an array and combines all its values into a single result.
-It works by keeping a running 'accumulator' that starts at a value you choose.
-For each item, you update the accumulator and return it. So for summing prices:
-start your accumulator at 0, and for each item, add its price to the running total."
-
-ABSOLUTE RULES:
-1. NEVER write code. Describe logic in plain English only.
-2. Be thorough but clear. This is the most direct mode — give them what they need to proceed.
-3. End with: "Does that make sense? Try implementing it — you've got this."`;
-
-// ─── Mode helpers ─────────────────────────────────────────────────────────────
-
-export function getSystemPrompt(mode: MentorMode): string {
-  switch (mode) {
-    case 'learn': return LEARN_MODE_PROMPT;
-    case 'hint': return HINT_MODE_PROMPT;
-    case 'emergency': return EMERGENCY_MODE_PROMPT;
-  }
-}
-
 export function getModeLabel(mode: MentorMode): string {
   switch (mode) {
-    case 'learn': return '🧠 Learn Mode';
-    case 'hint': return '💡 Hint Mode';
+    case 'learn':     return '🧠 Learn Mode';
+    case 'hint':      return '💡 Hint Mode';
     case 'emergency': return '🚨 Emergency Mode';
   }
 }
 
-// ─── API key management ───────────────────────────────────────────────────────
+// ─── Credentials ──────────────────────────────────────────────────────────────
 
-export async function getApiKey(context: vscode.ExtensionContext): Promise<string | undefined> {
-  return context.secrets.get('ldo.openaiApiKey');
+export async function getApiKey(ctx: vscode.ExtensionContext): Promise<string | undefined> {
+  return ctx.secrets.get('ldo.openaiApiKey');
+}
+export async function setApiKey(ctx: vscode.ExtensionContext, key: string): Promise<void> {
+  await ctx.secrets.store('ldo.openaiApiKey', key);
 }
 
-export async function setApiKey(context: vscode.ExtensionContext, key: string): Promise<void> {
-  await context.secrets.store('ldo.openaiApiKey', key);
+export async function getBackendToken(ctx: vscode.ExtensionContext): Promise<string | undefined> {
+  return ctx.secrets.get('ldo.backendToken');
+}
+export async function setBackendToken(ctx: vscode.ExtensionContext, token: string): Promise<void> {
+  await ctx.secrets.store('ldo.backendToken', token);
 }
 
-// ─── Streaming request ────────────────────────────────────────────────────────
-
-export type StreamChunk = (text: string) => void;
+// ─── Chat message type ────────────────────────────────────────────────────────
 
 export interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
 }
 
+// ─── Streaming callbacks ──────────────────────────────────────────────────────
+
+export interface StreamCallbacks {
+  onChunk: (text: string) => void;
+  onReplace?: (fullText: string) => void;  // when rule engine redacts something
+  onDone: () => void;
+  onError: (err: Error) => void;
+}
+
+// ─── Entry point ──────────────────────────────────────────────────────────────
+
+/**
+ * Decides whether to stream from the SaaS backend or directly from OpenAI.
+ *
+ * Backend mode (production):  set ldo.backendUrl in settings + logged-in token
+ * Direct mode (development):  set OpenAI API key in secrets
+ */
 export async function streamChat(
   context: vscode.ExtensionContext,
   mode: MentorMode,
   history: ChatMessage[],
-  onChunk: StreamChunk,
-  onDone: () => void,
-  onError: (err: Error) => void
+  callbacks: StreamCallbacks
+): Promise<void> {
+  const config = vscode.workspace.getConfiguration('ldo');
+  const backendUrl: string = config.get('backendUrl', '').trim();
+
+  if (backendUrl) {
+    await streamFromBackend(context, backendUrl, mode, history, callbacks);
+  } else {
+    await streamDirect(context, mode, history, callbacks);
+  }
+}
+
+// ─── Backend streaming (SaaS mode) ───────────────────────────────────────────
+
+async function streamFromBackend(
+  context: vscode.ExtensionContext,
+  backendUrl: string,
+  mode: MentorMode,
+  history: ChatMessage[],
+  { onChunk, onReplace, onDone, onError }: StreamCallbacks
+): Promise<void> {
+  const token = await getBackendToken(context);
+  if (!token) {
+    onError(new Error(
+      'Not logged in.\n\nRun "Let\'s Code Ourselves: Log in" from the Command Palette.'
+    ));
+    return;
+  }
+
+  let response: Response;
+  try {
+    response = await fetch(`${backendUrl}/chat/stream`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify({ mode, history }),
+    });
+  } catch (err: unknown) {
+    onError(new Error(`Cannot reach backend at ${backendUrl}: ${String(err)}`));
+    return;
+  }
+
+  if (!response.ok) {
+    let detail = response.statusText;
+    try {
+      const body = await response.json();
+      // Quota exceeded — special handling
+      if (response.status === 429 && body.detail?.message) {
+        onError(new Error(`\u{1F6AB} ${body.detail.message}`));
+        return;
+      }
+      detail = body.detail || detail;
+    } catch { /* ignore parse errors */ }
+    onError(new Error(`Backend error ${response.status}: ${detail}`));
+    return;
+  }
+
+  // Parse SSE stream
+  const reader = response.body?.getReader();
+  if (!reader) { onError(new Error('No response body')); return; }
+
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    // Process complete SSE messages (separated by \n\n)
+    const parts = buffer.split('\n\n');
+    buffer = parts.pop() ?? '';
+
+    for (const part of parts) {
+      const eventMatch = part.match(/^event: (\w+)/m);
+      const dataMatch  = part.match(/^data: (.+)/m);
+      if (!eventMatch || !dataMatch) continue;
+
+      const event = eventMatch[1];
+      const data  = dataMatch[1].replace(/\\n/g, '\n'); // unescape newlines
+
+      switch (event) {
+        case 'chunk':   onChunk(data); break;
+        case 'replace': onReplace?.(data); break;
+        case 'done':    onDone(); break;
+        case 'error':   onError(new Error(data)); return;
+      }
+    }
+  }
+}
+
+// ─── Direct OpenAI streaming (development / no backend) ──────────────────────
+
+const LEARN_PROMPT = `You are "Let's Code Ourselves" — a Socratic coding mentor inside VS Code.
+
+YOUR PHILOSOPHY: Never solve the problem for the developer. Make them solve it themselves.
+
+YOUR METHOD:
+- Respond with questions, not answers.
+- Ask one focused question at a time.
+- Guide toward the insight by making the developer think step by step.
+- When they get something right, push one step further.
+- When they're wrong, ask a question that makes the problem visible.
+
+ABSOLUTE RULES:
+1. NEVER write, generate, or show any code. No code blocks. Ever.
+2. NEVER give the direct answer.
+3. Keep responses short. One question is often better than five sentences.
+4. Be warm, encouraging, and patient.`;
+
+const HINT_PROMPT = `You are "Let's Code Ourselves" — giving a targeted hint.
+
+Give the smallest nudge that unblocks the developer. Point to the concept or built-in they need — not the answer.
+Max 3 sentences. End with a question. NEVER write code.`;
+
+const EMERGENCY_PROMPT = `You are "Let's Code Ourselves" — providing direct conceptual guidance.
+
+Explain the concept fully, step by step, in plain English. Be direct and clear.
+End with: "Does that make sense? Try implementing it — you've got this."
+ABSOLUTE RULE: NEVER write code. Describe logic in plain English only.`;
+
+function getSystemPrompt(mode: MentorMode): string {
+  return { learn: LEARN_PROMPT, hint: HINT_PROMPT, emergency: EMERGENCY_PROMPT }[mode];
+}
+
+async function streamDirect(
+  context: vscode.ExtensionContext,
+  mode: MentorMode,
+  history: ChatMessage[],
+  { onChunk, onDone, onError }: StreamCallbacks
 ): Promise<void> {
   const apiKey = await getApiKey(context);
   if (!apiKey) {
-    onError(
-      new Error(
-        'No OpenAI API key set.\n\nOpen the Command Palette and run:\n"Let\'s Code Ourselves: Set OpenAI API Key"'
-      )
-    );
+    onError(new Error(
+      'No API key set.\n\nRun "Let\'s Code Ourselves: Set OpenAI API Key" from the Command Palette.'
+    ));
     return;
   }
 
   const config = vscode.workspace.getConfiguration('ldo');
   const model: string = config.get('openaiModel', 'gpt-4o');
-
   const client = new OpenAI({ apiKey });
 
   try {
     const stream = await client.chat.completions.create({
       model,
       stream: true,
-      messages: [
-        { role: 'system', content: getSystemPrompt(mode) },
-        ...history,
-      ],
-      max_tokens: 1024, // Intentionally short — mentors ask focused questions
+      messages: [{ role: 'system', content: getSystemPrompt(mode) }, ...history],
+      max_tokens: 1024,
       temperature: 0.5,
     });
 
     for await (const chunk of stream) {
       const delta = chunk.choices[0]?.delta?.content;
-      if (delta) {
-        onChunk(delta);
-      }
+      if (delta) onChunk(delta);
     }
 
     onDone();

@@ -8,7 +8,7 @@ export interface WebviewIncomingMessage {
 }
 
 export interface WebviewOutgoingMessage {
-  type: 'streamStart' | 'streamChunk' | 'streamDone' | 'error' | 'modeChanged' | 'contextAttached';
+  type: 'streamStart' | 'streamChunk' | 'streamDone' | 'replaceMessage' | 'error' | 'modeChanged' | 'contextAttached';
   text?: string;
   mode?: MentorMode;
   modeLabel?: string;
@@ -41,6 +41,10 @@ export class AdvisorPanel {
 
   streamDone(): void {
     this.post({ type: 'streamDone' });
+  }
+
+  replaceLastMessage(fullText: string): void {
+    this.post({ type: 'replaceMessage', text: fullText });
   }
 
   showError(message: string): void {
@@ -463,6 +467,15 @@ export class AdvisorPanel {
           break;
         case 'streamChunk':
           appendToMentor(msg.text);
+          break;
+        case 'replaceMessage':
+          if (streamingEl) {
+            rawBuffer = msg.text || '';
+            const cursor = streamingEl.querySelector('.cursor');
+            streamingEl.innerHTML = renderMarkdown(rawBuffer);
+            if (cursor) streamingEl.appendChild(cursor);
+            scrollBottom();
+          }
           break;
         case 'streamDone':
           finalizeMentor();
