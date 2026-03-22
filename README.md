@@ -243,15 +243,86 @@ The extension needs to know where your backend is running.
 
 Press **F5** in VS Code.
 
-This opens a second VS Code window called the **Extension Development Host**. This is a sandboxed VS Code instance with your extension loaded and active. Think of it as your testing ground — anything you do there is running your local code.
+**Important: VS Code will do several things before the second window opens. Here is exactly what to expect, step by step.**
 
-> The original VS Code window is where you edit code. The new window is where you test the extension. Keep both open.
+---
 
-In the **Extension Development Host** window:
+#### What happens the moment you press F5
 
-1. Look at the left sidebar — you should see a new icon (a brain or similar)
+VS Code reads `.vscode/launch.json`, which says "before launching, run the default build task". The default build task is defined in `.vscode/tasks.json` as `npm run watch` — the TypeScript compiler in watch mode.
+
+So the sequence is:
+1. VS Code starts `npm run watch` in a background terminal
+2. The compiler does its first full build (a few seconds)
+3. Once the build succeeds, VS Code opens the second window
+
+---
+
+#### Dialog: "This task has a problem matcher that tracks when it is active..."
+
+Some versions of VS Code show this the very first time you run the extension. It's asking whether to keep using the background task.
+
+**Click "Continue and don't show again"** or just **"Continue"**.
+
+This is not an error. It's just VS Code being cautious about long-running background tasks.
+
+---
+
+#### Dialog: "Select the task to run" (task picker opens)
+
+This means `${defaultBuildTask}` didn't resolve automatically. VS Code is asking you to pick the build task manually.
+
+Look for **`npm: watch`** in the list and select it.
+
+If you don't see `npm: watch`, it means `npm install` was never run. Cancel the dialog, run `npm install` in the terminal, then press F5 again.
+
+---
+
+#### Dialog: "Configure Task" or the task list is empty
+
+Same root cause as above — `npm install` was never run, so Node can't find the TypeScript compiler. Cancel, run `npm install`, then F5 again.
+
+---
+
+#### A terminal panel opens at the bottom with TypeScript output
+
+This is normal. You'll see something like:
+
+```
+Starting compilation in watch mode...
+Found 0 errors. Watching for file changes.
+```
+
+**"Found 0 errors"** → good, the second window will open in a moment.
+
+**"error TS..."** → there is a TypeScript compile error. The second window will not open. See the TypeScript errors section in Common Problems below.
+
+---
+
+#### Nothing happens at all / VS Code just sits there
+
+The background task started but VS Code is waiting for confirmation that the first compile finished. This is controlled by the `problemMatcher: "$tsc-watch"` setting in `tasks.json` — it watches the terminal output for the phrase `"Found 0 errors"` to know compilation is done.
+
+If the terminal never prints that phrase (e.g. because of errors), the second window never opens.
+
+Check the terminal panel at the bottom of VS Code for error messages.
+
+---
+
+#### The second window finally opens — what to do in it
+
+The second window is called the **Extension Development Host**. It is a sandboxed VS Code instance running your extension. Think of it as the "test" window.
+
+- The **original window** is where you edit code
+- The **second window** is where you use the extension
+
+In the **second window**:
+
+1. Look at the Activity Bar on the far left — you should see a new icon added by the extension (it may be at the bottom of the icon list)
 2. Click it to open the **Let's Code Ourselves** panel
-3. The chat interface should appear
+3. The chat interface should appear on the left side
+
+> If you don't see the icon: open the Command Palette with `Ctrl+Shift+P` (Mac: `Cmd+Shift+P`), type `Let's Code`, and look for **"Let's Code Ourselves: Open Mentor"**. If that command doesn't appear, the extension didn't load — see the "chat panel is blank" troubleshooting section below.
 
 ---
 
@@ -421,11 +492,21 @@ lets_do_ourselves_project/
 - Make sure `ldo.backendUrl` is set to `http://localhost:8000` with no trailing slash
 - Make sure there's no firewall blocking port 8000
 
-### The chat panel is blank / won't open
+### The chat panel is blank / won't open / extension icon is missing
 
-- Make sure you ran `npm run compile` before pressing F5
-- Check the Debug Console in VS Code (View → Debug Console) for error messages
-- Try closing and reopening the Extension Development Host window
+**Step 1: Check whether the extension actually loaded.**
+In the Extension Development Host window, open the Command Palette (`Ctrl+Shift+P`) and type `Let's Code`. If no commands appear, the extension didn't load at all.
+
+**Step 2: Check the Debug Console.**
+In the *original* VS Code window (not the second one), go to **View → Debug Console**. Any crash or startup error from the extension will appear there in red.
+
+**Step 3: Check whether the TypeScript was compiled.**
+Look for an `out/` folder in the project root. If it doesn't exist or is empty, the build never ran.
+
+Fix: run `npm install` then `npm run compile` in the terminal, then press F5 again.
+
+**Step 4: Check the terminal panel for TypeScript errors.**
+When you press F5, a terminal tab opens at the bottom. It should say `Found 0 errors`. If it says `error TS...`, there is a compile error — the extension will not load until all errors are resolved. Read the error message; it will say exactly which file and line has the problem.
 
 ### TypeScript errors when compiling
 
