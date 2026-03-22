@@ -11,13 +11,22 @@ export interface WebviewOutgoingMessage {
   contextInfo?: string;
 }
 
+function getNonce(): string {
+  let text = '';
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  for (let i = 0; i < 32; i++) {
+    text += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return text;
+}
+
 export class AdvisorPanel {
   private _webview: vscode.Webview;
 
   constructor(webview: vscode.Webview) {
     this._webview = webview;
     this._webview.options = { enableScripts: true };
-    this._webview.html = this._getHtml();
+    this._webview.html = this._getHtml(getNonce());
   }
 
   post(msg: WebviewOutgoingMessage): void { this._webview.postMessage(msg); }
@@ -32,12 +41,13 @@ export class AdvisorPanel {
     return this._webview.onDidReceiveMessage(handler);
   }
 
-  private _getHtml(): string {
+  private _getHtml(nonce: string): string {
     return /* html */`<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';" />
   <title>Let's Code Ourselves</title>
   <style>
     :root {
@@ -233,7 +243,7 @@ export class AdvisorPanel {
 
   <div class="context-bar" id="ctx-bar">
     <span id="ctx-label"></span>
-    <button onclick="clearContext()" title="Remove context">✕</button>
+    <button id="ctx-close" title="Remove context">✕</button>
   </div>
 
   <div class="messages" id="messages">
@@ -250,19 +260,17 @@ export class AdvisorPanel {
         id="input"
         placeholder="What are you working on?"
         rows="1"
-        onkeydown="handleKey(event)"
-        oninput="autoResize(this)"
       ></textarea>
-      <button class="send-btn" id="send-btn" onclick="sendMessage()">Send</button>
+      <button class="send-btn" id="send-btn">Send</button>
     </div>
     <div class="action-row">
-      <button class="action-btn" onclick="attachFile()">📄 Attach file</button>
-      <button class="action-btn" onclick="attachSelection()">✂️ Attach selection</button>
-      <button class="action-btn" onclick="clearChat()">🗑 Clear</button>
+      <button class="action-btn" id="btn-attach-file">📄 Attach file</button>
+      <button class="action-btn" id="btn-attach-sel">✂️ Attach selection</button>
+      <button class="action-btn" id="btn-clear">🗑 Clear</button>
     </div>
   </div>
 
-  <script>
+  <script nonce="${nonce}">
     const vscode = acquireVsCodeApi();
     let isStreaming = false;
     let streamingEl = null;
@@ -376,6 +384,16 @@ export class AdvisorPanel {
         .replace(/^- (.+)$/gm, '<li>$1</li>')
         .replace(/(<li>[^]*?<\/li>\n?)+/g, m => '<ul>' + m + '</ul>');
     }
+
+    // Wire up all buttons with addEventListener (no inline onclick)
+    const inputEl = document.getElementById('input');
+    inputEl.addEventListener('keydown', handleKey);
+    inputEl.addEventListener('input', function() { autoResize(this); });
+    document.getElementById('send-btn').addEventListener('click', sendMessage);
+    document.getElementById('ctx-close').addEventListener('click', clearContext);
+    document.getElementById('btn-attach-file').addEventListener('click', attachFile);
+    document.getElementById('btn-attach-sel').addEventListener('click', attachSelection);
+    document.getElementById('btn-clear').addEventListener('click', clearChat);
 
     window.addEventListener('message', e => {
       const msg = e.data;
