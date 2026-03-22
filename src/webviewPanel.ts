@@ -303,12 +303,22 @@ export class AdvisorPanel {
     }
     function clearChat() {
       vscode.postMessage({ type: 'clearChat' });
-      document.getElementById('messages').innerHTML =
-        '<div class="empty" id="empty-state">' +
-        '<div class="empty-icon">🧠</div>' +
-        '<div>Ask about your code, a bug, a library, or an approach.</div>' +
-        '<div>Attach a file or selection for context.</div>' +
-        '</div>';
+      const msgs = document.getElementById('messages');
+      msgs.innerHTML = '';
+      const empty = document.createElement('div');
+      empty.className = 'empty';
+      empty.id = 'empty-state';
+      const icon = document.createElement('div');
+      icon.className = 'empty-icon';
+      icon.textContent = '\uD83E\uDDE0';
+      const t1 = document.createElement('div');
+      t1.textContent = 'Ask about your code, a bug, a library, or an approach.';
+      const t2 = document.createElement('div');
+      t2.textContent = 'Attach a file or selection for context.';
+      empty.appendChild(icon);
+      empty.appendChild(t1);
+      empty.appendChild(t2);
+      msgs.appendChild(empty);
     }
 
     function hideEmpty() {
@@ -374,7 +384,7 @@ export class AdvisorPanel {
       msgs.scrollTop = msgs.scrollHeight;
     }
 
-    // Minimal markdown: headings, bold, lists — intentionally no code block rendering
+    // Minimal markdown: headings, bold, lists - intentionally no code block rendering
     // NOTE: closing tags split as '<' + '/tag>' to avoid confusing the HTML parser
     function renderMarkdown(raw) {
       const lines = raw.split('\n');
@@ -412,8 +422,11 @@ export class AdvisorPanel {
       console.log('[LDO] Event listeners registered OK');
     } catch (err) {
       console.error('[LDO] Failed to register event listeners:', err);
-      document.getElementById('messages').innerHTML =
-        '<div class="msg error" style="margin:12px">JS error: ' + err.message + '</div>';
+      const errDiv = document.createElement('div');
+      errDiv.className = 'msg error';
+      errDiv.style.margin = '12px';
+      errDiv.textContent = 'JS error: ' + err.message;
+      document.getElementById('messages').appendChild(errDiv);
     }
 
     window.addEventListener('message', e => {
@@ -445,7 +458,7 @@ export class AdvisorPanel {
           setStreaming(false);
           break;
         case 'contextAttached':
-          document.getElementById('ctx-label').textContent = '📎 ' + msg.contextInfo;
+          document.getElementById('ctx-label').textContent = '\uD83D\uDCCE ' + msg.contextInfo;
           document.getElementById('ctx-bar').classList.add('visible');
           hideEmpty();
           break;
