@@ -206,18 +206,25 @@ cd lets_do_ourselves_project   # or wherever your project root is
 npm install
 ```
 
-This downloads the TypeScript compiler and VS Code extension tooling. Takes about 20 seconds.
+This downloads the TypeScript compiler and VS Code extension tooling into a `node_modules/` folder. Takes about 20–30 seconds.
 
 **Compile the TypeScript:**
 ```bash
 npm run compile
 ```
 
-This converts the TypeScript source files in `src/` into JavaScript in `out/`. VS Code runs the compiled JavaScript, not the TypeScript directly.
+This converts the TypeScript source files in `src/` into JavaScript files in `out/`. VS Code loads `out/extension.js` — it cannot run TypeScript directly.
 
-You should see no errors — just a brief pause and then your prompt returns.
+After this command finishes, verify it worked:
+```bash
+ls out/
+```
 
-> **Tip:** If you're going to edit the extension code, run `npm run watch` instead. It recompiles automatically every time you save a file.
+You should see files like `extension.js`, `openaiClient.js`, `webviewPanel.js`, etc. **If the `out/` folder is missing or empty, the extension will not load at all** — no icon, no commands, nothing in the Extension Development Host — even if everything else is correct.
+
+If `npm run compile` printed errors, fix them before continuing. The errors will say exactly which file and line number has the problem.
+
+> **Tip:** If you're going to edit the extension code, run `npm run watch` instead of `npm run compile`. It recompiles automatically every time you save a file.
 
 ---
 
