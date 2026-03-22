@@ -375,14 +375,28 @@ export class AdvisorPanel {
     }
 
     // Minimal markdown: headings, bold, lists — intentionally no code block rendering
+    // NOTE: closing tags split as '<' + '/tag>' to avoid confusing the HTML parser
     function renderMarkdown(raw) {
-      return raw
-        .replace(/^### (.+)$/gm, '<h3>$1</h3>')
-        .replace(/^## (.+)$/gm,  '<h2>$1</h2>')
-        .replace(/^# (.+)$/gm,   '<h2>$1</h2>')
-        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-        .replace(/^- (.+)$/gm, '<li>$1</li>')
-        .replace(/(<li>[^]*?<\/li>\n?)+/g, m => '<ul>' + m + '</ul>');
+      const lines = raw.split('\n');
+      const out = [];
+      let inList = false;
+      for (let i = 0; i < lines.length; i++) {
+        let line = lines[i];
+        if (/^- /.test(line)) {
+          if (!inList) { out.push('<ul>'); inList = true; }
+          out.push('<li>' + line.slice(2) + '<' + '/li>');
+        } else {
+          if (inList) { out.push('<' + '/ul>'); inList = false; }
+          line = line
+            .replace(/^### (.+)$/, function(_, t) { return '<h3>' + t + '<' + '/h3>'; })
+            .replace(/^## (.+)$/,  function(_, t) { return '<h2>' + t + '<' + '/h2>'; })
+            .replace(/^# (.+)$/,   function(_, t) { return '<h2>' + t + '<' + '/h2>'; })
+            .replace(/\*\*(.+?)\*\*/g, function(_, t) { return '<strong>' + t + '<' + '/strong>'; });
+          out.push(line);
+        }
+      }
+      if (inList) out.push('<' + '/ul>');
+      return out.join('\n');
     }
 
     // Wire up all buttons with addEventListener (no inline onclick)
