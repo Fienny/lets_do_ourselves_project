@@ -1,22 +1,19 @@
 from contextlib import asynccontextmanager
-
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
-from .database import create_tables
-from .routers import auth, chat, billing
+from .routers.chat import router as chat_router
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    create_tables()
     yield
 
 
 app = FastAPI(
-    title="Let's Code Ourselves — API",
-    description="Socratic AI mentor backend. Makes developers think — not copy.",
+    title="Let's Code Ourselves",
+    description="Socratic coding mentor API. No code. Just questions.",
     version="0.1.0",
     lifespan=lifespan,
 )
@@ -29,11 +26,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(auth.router)
-app.include_router(chat.router)
-app.include_router(billing.router)
+app.include_router(chat_router)
 
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "service": "lets-code-ourselves"}
+    return {"status": "ok"}

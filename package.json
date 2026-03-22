@@ -1,36 +1,16 @@
 {
   "name": "lets-code-ourselves",
   "displayName": "Let's Code Ourselves",
-  "description": "AI mentor that makes you think — not a code generator. Socratic learning inside VS Code.",
+  "description": "AI mentor that makes you think — not a code generator.",
   "version": "0.1.0",
   "publisher": "lets-code-ourselves",
-  "engines": {
-    "vscode": "^1.85.0"
-  },
-  "categories": [
-    "Education",
-    "Other"
-  ],
-  "keywords": [
-    "learning",
-    "mentor",
-    "AI",
-    "Socratic",
-    "junior developer",
-    "best practices",
-    "no code generation"
-  ],
-  "activationEvents": [
-    "onStartupFinished"
-  ],
+  "engines": { "vscode": "^1.85.0" },
+  "categories": ["Education", "Other"],
+  "keywords": ["learning", "mentor", "AI", "Socratic", "junior developer"],
+  "activationEvents": ["onStartupFinished"],
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
-      {
-        "command": "ldo.setApiKey",
-        "title": "Set OpenAI API Key",
-        "category": "Let's Code Ourselves"
-      },
       {
         "command": "ldo.attachFile",
         "title": "Attach Current File to Chat",
@@ -44,16 +24,6 @@
       {
         "command": "ldo.attachProject",
         "title": "Attach Entire Project to Chat",
-        "category": "Let's Code Ourselves"
-      },
-      {
-        "command": "ldo.login",
-        "title": "Log In",
-        "category": "Let's Code Ourselves"
-      },
-      {
-        "command": "ldo.register",
-        "title": "Create Account",
         "category": "Let's Code Ourselves"
       }
     ],
@@ -76,29 +46,12 @@
         "ldo.backendUrl": {
           "type": "string",
           "default": "",
-          "description": "URL of the Let's Code Ourselves backend (e.g. https://api.lets-code-ourselves.com). When set, the extension authenticates via the backend instead of using a direct OpenAI key."
-        },
-        "ldo.openaiModel": {
-          "type": "string",
-          "default": "gpt-4o",
-          "enum": ["gpt-4o", "gpt-4-turbo", "gpt-4", "gpt-3.5-turbo"],
-          "description": "OpenAI model used by the mentor"
-        },
-        "ldo.defaultMode": {
-          "type": "string",
-          "default": "learn",
-          "enum": ["learn", "hint", "emergency"],
-          "enumDescriptions": [
-            "Pure Socratic method — always responds with questions",
-            "Small targeted hints when stuck",
-            "Direct conceptual guidance for urgent situations"
-          ],
-          "description": "Default mentor mode when the extension starts"
+          "description": "URL of the Let's Code Ourselves backend (e.g. http://localhost:8000)"
         },
         "ldo.maxFileSizeKb": {
           "type": "number",
           "default": 100,
-          "description": "Maximum file size in KB to include when attaching files"
+          "description": "Max file size in KB when attaching files"
         },
         "ldo.excludePatterns": {
           "type": "array",

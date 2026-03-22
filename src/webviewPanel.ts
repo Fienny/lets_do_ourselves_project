@@ -1,23 +1,16 @@
 import * as vscode from 'vscode';
-import { MentorMode, getModeLabel, ChatMessage } from './openaiClient';
 
 export interface WebviewIncomingMessage {
-  type: 'sendMessage' | 'setMode' | 'setApiKey' | 'clearChat' | 'attachFile' | 'attachSelection';
+  type: 'sendMessage' | 'clearChat' | 'attachFile' | 'attachSelection';
   text?: string;
-  mode?: MentorMode;
 }
 
 export interface WebviewOutgoingMessage {
-  type: 'streamStart' | 'streamChunk' | 'streamDone' | 'replaceMessage' | 'error' | 'modeChanged' | 'contextAttached';
+  type: 'streamStart' | 'streamChunk' | 'streamDone' | 'replaceMessage' | 'error' | 'contextAttached';
   text?: string;
-  mode?: MentorMode;
-  modeLabel?: string;
   contextInfo?: string;
 }
 
-/**
- * Manages the sidebar chat panel.
- */
 export class AdvisorPanel {
   private _webview: vscode.Webview;
 
@@ -27,37 +20,13 @@ export class AdvisorPanel {
     this._webview.html = this._getHtml();
   }
 
-  post(msg: WebviewOutgoingMessage): void {
-    this._webview.postMessage(msg);
-  }
-
-  streamStart(): void {
-    this.post({ type: 'streamStart' });
-  }
-
-  streamChunk(text: string): void {
-    this.post({ type: 'streamChunk', text });
-  }
-
-  streamDone(): void {
-    this.post({ type: 'streamDone' });
-  }
-
-  replaceLastMessage(fullText: string): void {
-    this.post({ type: 'replaceMessage', text: fullText });
-  }
-
-  showError(message: string): void {
-    this.post({ type: 'error', text: message });
-  }
-
-  notifyModeChanged(mode: MentorMode): void {
-    this.post({ type: 'modeChanged', mode, modeLabel: getModeLabel(mode) });
-  }
-
-  notifyContextAttached(info: string): void {
-    this.post({ type: 'contextAttached', contextInfo: info });
-  }
+  post(msg: WebviewOutgoingMessage): void { this._webview.postMessage(msg); }
+  streamStart(): void                     { this.post({ type: 'streamStart' }); }
+  streamChunk(text: string): void         { this.post({ type: 'streamChunk', text }); }
+  streamDone(): void                      { this.post({ type: 'streamDone' }); }
+  replaceLastMessage(text: string): void  { this.post({ type: 'replaceMessage', text }); }
+  showError(message: string): void        { this.post({ type: 'error', text: message }); }
+  notifyContextAttached(info: string): void { this.post({ type: 'contextAttached', contextInfo: info }); }
 
   onMessage(handler: (msg: WebviewIncomingMessage) => void): vscode.Disposable {
     return this._webview.onDidReceiveMessage(handler);
@@ -72,21 +41,21 @@ export class AdvisorPanel {
   <title>Let's Code Ourselves</title>
   <style>
     :root {
-      --bg:          var(--vscode-editor-background);
-      --fg:          var(--vscode-editor-foreground);
-      --border:      var(--vscode-panel-border);
-      --accent:      var(--vscode-button-background);
-      --accent-fg:   var(--vscode-button-foreground);
-      --accent-h:    var(--vscode-button-hoverBackground);
-      --input-bg:    var(--vscode-input-background);
-      --input-fg:    var(--vscode-input-foreground);
-      --input-bd:    var(--vscode-input-border);
-      --user-bg:     var(--vscode-badge-background);
-      --user-fg:     var(--vscode-badge-foreground);
-      --mentor-bg:   var(--vscode-editor-inactiveSelectionBackground);
-      --error:       var(--vscode-errorForeground);
-      --font:        var(--vscode-font-family);
-      --font-sz:     var(--vscode-font-size);
+      --bg:        var(--vscode-editor-background);
+      --fg:        var(--vscode-editor-foreground);
+      --border:    var(--vscode-panel-border);
+      --accent:    var(--vscode-button-background);
+      --accent-fg: var(--vscode-button-foreground);
+      --accent-h:  var(--vscode-button-hoverBackground);
+      --input-bg:  var(--vscode-input-background);
+      --input-fg:  var(--vscode-input-foreground);
+      --input-bd:  var(--vscode-input-border);
+      --user-bg:   var(--vscode-badge-background);
+      --user-fg:   var(--vscode-badge-foreground);
+      --mentor-bg: var(--vscode-editor-inactiveSelectionBackground);
+      --error:     var(--vscode-errorForeground);
+      --font:      var(--vscode-font-family);
+      --font-sz:   var(--vscode-font-size);
     }
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -101,35 +70,14 @@ export class AdvisorPanel {
       overflow: hidden;
     }
 
-    /* ── Header ── */
     .header {
-      padding: 10px 12px 8px;
+      padding: 10px 12px;
       border-bottom: 1px solid var(--border);
       flex-shrink: 0;
     }
-    .header h1 { font-size: 1em; font-weight: 700; margin-bottom: 6px; }
-    .mode-row { display: flex; gap: 4px; flex-wrap: wrap; }
-    .mode-btn {
-      background: transparent;
-      border: 1px solid var(--border);
-      color: var(--fg);
-      border-radius: 12px;
-      padding: 3px 10px;
-      font-size: 0.78em;
-      cursor: pointer;
-      font-family: var(--font);
-      transition: all 0.15s;
-      opacity: 0.7;
-    }
-    .mode-btn:hover { opacity: 1; background: var(--input-bg); }
-    .mode-btn.active {
-      background: var(--accent);
-      color: var(--accent-fg);
-      border-color: var(--accent);
-      opacity: 1;
-    }
+    .header h1 { font-size: 1em; font-weight: 700; }
+    .header p  { font-size: 0.78em; opacity: 0.55; margin-top: 2px; }
 
-    /* ── Context badge ── */
     .context-bar {
       padding: 5px 12px;
       font-size: 0.78em;
@@ -147,12 +95,10 @@ export class AdvisorPanel {
       color: var(--fg);
       cursor: pointer;
       opacity: 0.6;
-      font-size: 0.9em;
       padding: 0 3px;
     }
     .context-bar button:hover { opacity: 1; }
 
-    /* ── Chat messages ── */
     .messages {
       flex: 1;
       overflow-y: auto;
@@ -182,8 +128,7 @@ export class AdvisorPanel {
       background: var(--mentor-bg);
       border-bottom-left-radius: 3px;
     }
-    .msg.mentor h2 { font-size: 0.95em; margin: 8px 0 3px; }
-    .msg.mentor h3 { font-size: 0.9em; margin: 6px 0 2px; }
+    .msg.mentor h2, .msg.mentor h3 { font-size: 0.95em; margin: 6px 0 2px; }
     .msg.mentor strong { font-weight: 700; }
     .msg.mentor ul, .msg.mentor ol { padding-left: 16px; margin: 4px 0; }
     .msg.mentor li { margin-bottom: 2px; }
@@ -193,6 +138,7 @@ export class AdvisorPanel {
       border: 1px solid var(--error);
       color: var(--error);
       font-size: 0.82em;
+      border-radius: 6px;
     }
 
     .cursor {
@@ -206,22 +152,20 @@ export class AdvisorPanel {
     }
     @keyframes blink { 50% { opacity: 0; } }
 
-    /* ── Empty state ── */
     .empty {
       flex: 1;
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      opacity: 0.45;
-      font-size: 0.88em;
+      opacity: 0.4;
+      font-size: 0.85em;
       text-align: center;
       gap: 8px;
       padding: 20px;
     }
     .empty-icon { font-size: 2em; }
 
-    /* ── Input area ── */
     .input-area {
       border-top: 1px solid var(--border);
       padding: 8px 10px;
@@ -257,7 +201,6 @@ export class AdvisorPanel {
       font-size: 0.9em;
       height: 36px;
       flex-shrink: 0;
-      transition: background 0.15s;
     }
     .send-btn:hover:not(:disabled) { background: var(--accent-h); }
     .send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
@@ -277,43 +220,35 @@ export class AdvisorPanel {
       font-size: 0.78em;
       cursor: pointer;
       font-family: var(--font);
-      opacity: 0.75;
+      opacity: 0.7;
     }
     .action-btn:hover { opacity: 1; background: var(--input-bg); }
   </style>
 </head>
 <body>
-  <!-- Header with mode switcher -->
   <div class="header">
     <h1>Let's Code Ourselves</h1>
-    <div class="mode-row">
-      <button class="mode-btn active" data-mode="learn"  onclick="setMode('learn')">🧠 Learn</button>
-      <button class="mode-btn"        data-mode="hint"   onclick="setMode('hint')">💡 Hint</button>
-      <button class="mode-btn"        data-mode="emergency" onclick="setMode('emergency')">🚨 Emergency</button>
-    </div>
+    <p>Ask me anything. I'll make you think, not copy.</p>
   </div>
 
-  <!-- Context indicator (shown when file/selection is attached) -->
   <div class="context-bar" id="ctx-bar">
-    <span id="ctx-label">📎 No context</span>
+    <span id="ctx-label"></span>
     <button onclick="clearContext()" title="Remove context">✕</button>
   </div>
 
-  <!-- Messages -->
   <div class="messages" id="messages">
     <div class="empty" id="empty-state">
       <div class="empty-icon">🧠</div>
-      <div><strong>Ask me about your code.</strong></div>
-      <div>I won't give you answers — I'll help you find them yourself.</div>
+      <div>Ask about your code, a bug, a library, or an approach.</div>
+      <div>Attach a file or selection for context.</div>
     </div>
   </div>
 
-  <!-- Input -->
   <div class="input-area">
     <div class="input-row">
       <textarea
         id="input"
-        placeholder="Ask a question about your code..."
+        placeholder="What are you working on?"
         rows="1"
         onkeydown="handleKey(event)"
         oninput="autoResize(this)"
@@ -321,39 +256,31 @@ export class AdvisorPanel {
       <button class="send-btn" id="send-btn" onclick="sendMessage()">Send</button>
     </div>
     <div class="action-row">
-      <button class="action-btn" onclick="attachFile()">📄 Attach current file</button>
+      <button class="action-btn" onclick="attachFile()">📄 Attach file</button>
       <button class="action-btn" onclick="attachSelection()">✂️ Attach selection</button>
-      <button class="action-btn" onclick="clearChat()">🗑 Clear chat</button>
-      <button class="action-btn" onclick="setApiKey()">🔑 API Key</button>
+      <button class="action-btn" onclick="clearChat()">🗑 Clear</button>
     </div>
   </div>
 
   <script>
     const vscode = acquireVsCodeApi();
     let isStreaming = false;
-    let currentMode = 'learn';
     let streamingEl = null;
     let rawBuffer = '';
 
-    // ── Send ──────────────────────────────────────────────────────────────────
     function sendMessage() {
       const input = document.getElementById('input');
       const text = input.value.trim();
       if (!text || isStreaming) return;
-
       hideEmpty();
       appendUserMessage(text);
       input.value = '';
       autoResize(input);
-
       vscode.postMessage({ type: 'sendMessage', text });
     }
 
     function handleKey(e) {
-      if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault();
-        sendMessage();
-      }
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
     }
 
     function autoResize(el) {
@@ -361,27 +288,21 @@ export class AdvisorPanel {
       el.style.height = Math.min(el.scrollHeight, 120) + 'px';
     }
 
-    // ── Mode ──────────────────────────────────────────────────────────────────
-    function setMode(mode) {
-      currentMode = mode;
-      document.querySelectorAll('.mode-btn').forEach(btn => {
-        btn.classList.toggle('active', btn.dataset.mode === mode);
-      });
-      vscode.postMessage({ type: 'setMode', mode });
-    }
-
-    // ── Context ───────────────────────────────────────────────────────────────
     function attachFile()      { vscode.postMessage({ type: 'attachFile' }); }
     function attachSelection() { vscode.postMessage({ type: 'attachSelection' }); }
-    function clearContext() {
+    function clearContext()    {
       document.getElementById('ctx-bar').classList.remove('visible');
-      vscode.postMessage({ type: 'attachFile', clear: true });
+    }
+    function clearChat() {
+      vscode.postMessage({ type: 'clearChat' });
+      document.getElementById('messages').innerHTML =
+        '<div class="empty" id="empty-state">' +
+        '<div class="empty-icon">🧠</div>' +
+        '<div>Ask about your code, a bug, a library, or an approach.</div>' +
+        '<div>Attach a file or selection for context.</div>' +
+        '</div>';
     }
 
-    function setApiKey() { vscode.postMessage({ type: 'setApiKey' }); }
-    function clearChat() { vscode.postMessage({ type: 'clearChat' }); }
-
-    // ── DOM helpers ───────────────────────────────────────────────────────────
     function hideEmpty() {
       const el = document.getElementById('empty-state');
       if (el) el.remove();
@@ -403,7 +324,6 @@ export class AdvisorPanel {
       rawBuffer = '';
       const cursor = document.createElement('span');
       cursor.className = 'cursor';
-      cursor.id = 'stream-cursor';
       div.appendChild(cursor);
       msgs.appendChild(div);
       streamingEl = div;
@@ -435,29 +355,28 @@ export class AdvisorPanel {
       scrollBottom();
     }
 
-    function scrollBottom() {
-      const msgs = document.getElementById('messages');
-      msgs.scrollTop = msgs.scrollHeight;
-    }
-
     function setStreaming(val) {
       isStreaming = val;
       document.getElementById('send-btn').disabled = val;
       document.getElementById('input').disabled = val;
     }
 
-    // Minimal markdown: headings, bold, lists — NO code blocks
+    function scrollBottom() {
+      const msgs = document.getElementById('messages');
+      msgs.scrollTop = msgs.scrollHeight;
+    }
+
+    // Minimal markdown: headings, bold, lists — intentionally no code block rendering
     function renderMarkdown(raw) {
       return raw
         .replace(/^### (.+)$/gm, '<h3>$1</h3>')
-        .replace(/^## (.+)$/gm, '<h2>$1</h2>')
-        .replace(/^# (.+)$/gm, '<h2>$1</h2>')
+        .replace(/^## (.+)$/gm,  '<h2>$1</h2>')
+        .replace(/^# (.+)$/gm,   '<h2>$1</h2>')
         .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
         .replace(/^- (.+)$/gm, '<li>$1</li>')
         .replace(/(<li>[^]*?<\/li>\n?)+/g, m => '<ul>' + m + '</ul>');
     }
 
-    // ── Message handler ───────────────────────────────────────────────────────
     window.addEventListener('message', e => {
       const msg = e.data;
       switch (msg.type) {
@@ -486,25 +405,10 @@ export class AdvisorPanel {
           showError(msg.text);
           setStreaming(false);
           break;
-        case 'modeChanged':
-          // Sync mode buttons if changed from outside
-          document.querySelectorAll('.mode-btn').forEach(btn => {
-            btn.classList.toggle('active', btn.dataset.mode === msg.mode);
-          });
-          currentMode = msg.mode;
-          break;
         case 'contextAttached':
-          const bar = document.getElementById('ctx-bar');
-          const label = document.getElementById('ctx-label');
-          label.textContent = '📎 ' + msg.contextInfo;
-          bar.classList.add('visible');
+          document.getElementById('ctx-label').textContent = '📎 ' + msg.contextInfo;
+          document.getElementById('ctx-bar').classList.add('visible');
           hideEmpty();
-          break;
-        case 'clearChat':
-          document.getElementById('messages').innerHTML =
-            '<div class="empty" id="empty-state"><div class="empty-icon">🧠</div>' +
-            '<div><strong>Ask me about your code.</strong></div>' +
-            '<div>I won\'t give you answers — I\'ll help you find them yourself.</div></div>';
           break;
       }
     });

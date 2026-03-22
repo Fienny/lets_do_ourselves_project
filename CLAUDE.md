@@ -45,11 +45,7 @@ Received the full business plan. Identified that the existing implementation was
 - Added `SessionState` interface: `mode`, `history`, `attachedContext`
 - Mode switch resets history (fresh mental model per mode)
 - History bounded to last 20 messages
-- Commands registered:
-  - `ldo.setApiKey` — prompts for OpenAI key, stores in secrets
-  - `ldo.attachFile` — scans current editor file
-  - `ldo.attachSelection` — grabs editor selection
-  - `ldo.attachProject` — scans entire workspace
+- Commands registered: `ldo.setApiKey`, `ldo.attachFile`, `ldo.attachSelection`, `ldo.attachProject`
 - Prompt for API key on first activation
 
 ### `package.json`
@@ -67,108 +63,104 @@ Received the full business plan. Identified that the existing implementation was
 #### `backend/requirements.txt`
 FastAPI, uvicorn, SQLAlchemy, Alembic, python-jose, passlib, httpx, openai, stripe, pydantic-settings.
 
-#### `backend/.env.example`
-Template for all required env vars with inline documentation.
-
 #### `backend/app/config.py`
-- `pydantic-settings` `Settings` class
-- Reads from `.env` file
-- Exposes: `openai_api_key`, `openai_model`, `secret_key`, `algorithm`, `access_token_expire_minutes`, `stripe_*`, `free_requests_per_month`, `paid_requests_per_month`, `allowed_origins`, `database_url`
-- `origins_list` property splits comma-separated origins
+- `pydantic-settings` `Settings` class — `openai_api_key`, `openai_model`, `secret_key`, `stripe_*`, quotas, `allowed_origins`, `database_url`
 
 #### `backend/app/database.py`
-- SQLAlchemy engine + `SessionLocal`
-- `get_db()` FastAPI dependency (yields session, closes on exit)
-- `create_tables()` called at app startup via lifespan
-- SQLite by default; swap `DATABASE_URL` to `postgresql://` for production
+- SQLAlchemy engine + `SessionLocal`, `get_db()` dependency, `create_tables()` on startup
 
 #### `backend/app/models/user.py`
-`User` table:
-- `id`, `email` (unique, indexed), `hashed_password`
-- `is_active`, `is_paid`
-- `stripe_customer_id`, `stripe_subscription_id`, `subscription_status` (free/active/canceled/past_due)
-- `created_at`, `updated_at`
+`User` table: `id`, `email`, `hashed_password`, `is_active`, `is_paid`, Stripe IDs, `subscription_status`, timestamps.
 
 #### `backend/app/models/usage.py`
-`UsageRecord` table:
-- `id`, `user_id` (FK → users), `mode`, `tokens_used`
-- `created_at`, `month_bucket` (e.g. `"2026-03"`) — indexed for fast quota queries
+`UsageRecord` table: `id`, `user_id`, `mode`, `tokens_used`, `created_at`, `month_bucket`.
 
 #### `backend/app/routers/auth.py`
-- `POST /auth/register` — creates user, returns JWT
-- `POST /auth/login` — OAuth2 password form, returns JWT
-- `GET  /auth/me` — returns current user info
-- `get_current_user()` FastAPI dependency — validates JWT, used by all protected routes
-- Passwords hashed with bcrypt via passlib
-- JWT signed with HS256, 7-day expiry by default
+`POST /auth/register`, `POST /auth/login` (OAuth2), `GET /auth/me`, `get_current_user()` dependency, bcrypt passwords, HS256 JWT.
 
 #### `backend/app/routers/chat.py`
-- `POST /chat/stream` — protected, checks quota, streams SSE response
-  - Records usage **before** streaming (prevents abuse on disconnect)
-  - Calls `stream_mentor_response()` from AI service
-  - Returns `StreamingResponse` with `text/event-stream`
-- `GET /chat/quota` — returns `{used, limit, remaining, tier, month}`
-- Quota check: free = 30 req/month, paid = unlimited (configurable in env)
+`POST /chat/stream` (protected, quota-checked, SSE), `GET /chat/quota`.
 
 #### `backend/app/routers/billing.py`
-- `POST /billing/subscribe` — creates Stripe Checkout session, returns `checkout_url`
-- `GET  /billing/portal` — creates Stripe Customer Portal session, returns `portal_url`
-- `POST /billing/webhook` — handles Stripe events:
-  - `checkout.session.completed` → set `is_paid=True`, save subscription ID
-  - `customer.subscription.updated` → sync `subscription_status`
-  - `customer.subscription.deleted` → set `is_paid=False`, `status=canceled`
-- Webhook signature verified with `stripe.Webhook.construct_event`
+`POST /billing/subscribe`, `GET /billing/portal`, `POST /billing/webhook` (Stripe events: checkout completed, subscription updated/deleted).
 
 #### `backend/app/services/ai.py`
-- `stream_mentor_response()` async generator
-- Calls OpenAI with system prompt + history
-- Emits SSE events: `chunk` (delta text), `replace` (after rule engine redaction), `done` (full text), `error`
-- Post-stream: applies rule engine to full response; emits `replace` if redacted
+`stream_mentor_response()` async generator — calls OpenAI, emits SSE chunk/replace/done/error, applies rule engine post-stream.
 
 #### `backend/app/services/rule_engine.py`
-**The core philosophy enforcer.** Validates responses before they reach the user:
+Three mode prompts (Learn/Hint/Emergency). `apply_rules()` strips code blocks, warns on missing `?`, direct answers, long responses.
 
-| Rule | Mode | Severity | Action |
-|---|---|---|---|
-| Contains code block (` ``` `) | All | block | Redact — replace with "I'm here to help you think" |
-| Missing `?` | Learn | warn | Log violation |
-| Starts with direct answer phrase | Learn | warn | Log violation |
-| Response > 1200 chars | Learn/Hint | warn | Log violation |
-
-- `apply_rules()` returns `(cleaned_text, violations)`
-- `redact_code_blocks()` strips fenced code blocks and inserts redirect message
-- System prompts for all three modes also live here (single source of truth for backend)
-
-#### `backend/app/main.py`
-- FastAPI app with `lifespan` (creates tables on startup)
-- CORS middleware configured from `settings.origins_list`
-- Routers mounted: auth, chat, billing
-- `GET /health` endpoint
+### Extension updates (Session 2)
+- `openaiClient.ts` — dual-mode routing (backend SSE vs direct OpenAI), `StreamCallbacks` interface, `getBackendToken/setBackendToken`
+- `extension.ts` — `ldo.login`, `ldo.register` commands; `onReplace` callback
+- `webviewPanel.ts` — `replaceLastMessage()`, `replaceMessage` event handler
+- `package.json` — `ldo.backendUrl`, login/register commands
 
 ---
 
-### Extension updates (Session 2)
+## Session 3 — MVP simplification (this session)
 
-#### `src/openaiClient.ts`
-- Added `StreamCallbacks` interface: `onChunk`, `onReplace`, `onDone`, `onError`
-- Added `getBackendToken()` / `setBackendToken()` for JWT storage in VS Code secrets
-- `streamChat()` now routes based on `ldo.backendUrl` setting:
-  - **Backend mode** — calls `/chat/stream`, parses SSE, handles quota errors with friendly message
-  - **Direct mode** — calls OpenAI directly (development / no backend)
-- SSE parser in `streamFromBackend()` handles `chunk`, `replace`, `done`, `error` events
-- Unescapes `\n` in SSE data back to real newlines
+### Decision
+Stripped everything that isn't core product. No auth, no billing, no tiers, no multiple modes. The product is: one mentor, one philosophy, one endpoint.
 
-#### `src/extension.ts`
-- Added `ldo.login` command — fetches JWT from backend, stores in secrets
-- Added `ldo.register` command — creates account + stores JWT
-- Updated `handleUserMessage()` to use new `StreamCallbacks` interface
-- Added `onReplace` callback → calls `panel.replaceLastMessage()` when rule engine redacts
+### Deleted
+- `backend/app/models/` — entire directory (no database)
+- `backend/app/database.py` — no database
+- `backend/app/routers/auth.py` — no accounts
+- `backend/app/routers/billing.py` — no payments
+- `backend/app/middleware/` — entire directory
 
-#### `src/webviewPanel.ts`
-- Added `replaceMessage` to `WebviewOutgoingMessage` type
-- Added `replaceLastMessage()` method on `AdvisorPanel`
-- Added `replaceMessage` case in webview JS message handler — replaces full streaming bubble content
+### `backend/requirements.txt`
+Stripped to: fastapi, uvicorn, openai, pydantic-settings, python-dotenv.
 
-#### `package.json`
-- Added `ldo.backendUrl` setting
-- Added `ldo.login` and `ldo.register` commands
+### `backend/.env.example`
+Stripped to: `OPENAI_API_KEY`, `OPENAI_MODEL`, `ALLOWED_ORIGINS`.
+
+### `backend/app/config.py`
+Three fields only: `openai_api_key`, `openai_model`, `allowed_origins`.
+
+### `backend/app/services/rule_engine.py`
+- Removed `MentorMode` enum — single unified system prompt
+- **New system prompt** — single mentor with three behaviors baked in:
+  1. Socratic questions for bugs/code problems
+  2. Docs awareness — names exact modern API/pattern + explains concept in plain English; always references current versions
+  3. Redirect ("stop, use X") only when developer explicitly asks "is my approach right?"
+- Rule engine simplified: `validate()` and `apply_rules()` take no mode argument
+- Hard block: code blocks stripped and replaced with a redirect message
+- Soft warns: no `?` in response, direct answer phrases, response > 1200 chars
+
+### `backend/app/services/ai.py`
+- `stream_mentor_response()` takes only `history` — no mode param
+- Uses single `SYSTEM_PROMPT` from rule engine (one source of truth)
+
+### `backend/app/routers/chat.py`
+- `ChatRequest` schema: `history` only — no `mode` field
+- No auth dependency, no quota check
+- One route: `POST /chat/stream`
+
+### `backend/app/main.py`
+- Mounts only the chat router
+- No lifespan DB setup — nothing to initialize
+
+### `src/openaiClient.ts`
+- Removed `MentorMode`, `getModeLabel`, `getApiKey/setApiKey`, `getBackendToken/setBackendToken`
+- Removed direct OpenAI mode entirely — always calls backend
+- `streamChat(context, history, callbacks)` — simplified signature
+- If `ldo.backendUrl` not set, shows a clear configuration error
+
+### `src/extension.ts`
+- Removed `state.mode` from `SessionState`
+- Removed `ldo.setApiKey`, `ldo.login`, `ldo.register` commands
+- Removed mode-switching `setMode` message handler
+- Clean session state: `history` + `attachedContext` only
+
+### `src/webviewPanel.ts`
+- Removed mode switcher buttons entirely
+- Removed all mode-related types and message handlers
+- Header: title + single tagline, nothing else
+- Action row: Attach file, Attach selection, Clear — no API key button
+
+### `package.json`
+- Removed `ldo.setApiKey`, `ldo.login`, `ldo.register` commands
+- Removed `ldo.defaultMode`, `ldo.openaiModel` settings (backend concerns)
+- Kept: `ldo.backendUrl`, `ldo.maxFileSizeKb`, `ldo.excludePatterns`
