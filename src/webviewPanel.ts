@@ -47,7 +47,7 @@ export class AdvisorPanel {
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline';" />
   <title>Let's Code Ourselves</title>
   <style>
     :root {
@@ -270,7 +270,7 @@ export class AdvisorPanel {
     </div>
   </div>
 
-  <script nonce="${nonce}">
+  <script>
     const vscode = acquireVsCodeApi();
     let isStreaming = false;
     let streamingEl = null;
@@ -386,14 +386,21 @@ export class AdvisorPanel {
     }
 
     // Wire up all buttons with addEventListener (no inline onclick)
-    const inputEl = document.getElementById('input');
-    inputEl.addEventListener('keydown', handleKey);
-    inputEl.addEventListener('input', function() { autoResize(this); });
-    document.getElementById('send-btn').addEventListener('click', sendMessage);
-    document.getElementById('ctx-close').addEventListener('click', clearContext);
-    document.getElementById('btn-attach-file').addEventListener('click', attachFile);
-    document.getElementById('btn-attach-sel').addEventListener('click', attachSelection);
-    document.getElementById('btn-clear').addEventListener('click', clearChat);
+    try {
+      const inputEl = document.getElementById('input');
+      inputEl.addEventListener('keydown', handleKey);
+      inputEl.addEventListener('input', function() { autoResize(this); });
+      document.getElementById('send-btn').addEventListener('click', sendMessage);
+      document.getElementById('ctx-close').addEventListener('click', clearContext);
+      document.getElementById('btn-attach-file').addEventListener('click', attachFile);
+      document.getElementById('btn-attach-sel').addEventListener('click', attachSelection);
+      document.getElementById('btn-clear').addEventListener('click', clearChat);
+      console.log('[LDO] Event listeners registered OK');
+    } catch (err) {
+      console.error('[LDO] Failed to register event listeners:', err);
+      document.getElementById('messages').innerHTML =
+        '<div class="msg error" style="margin:12px">JS error: ' + err.message + '</div>';
+    }
 
     window.addEventListener('message', e => {
       const msg = e.data;
