@@ -1,0 +1,14 @@
+[Unit]
+Description=Let's Code Ourselves — FastAPI backend
+After=network.target
+
+[Service]
+User=www-data
+WorkingDirectory=/var/www/ldo/backend
+EnvironmentFile=/var/www/ldo/backend/.env
+ExecStart=/var/www/ldo/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

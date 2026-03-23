@@ -5,3 +5,8 @@ src/**
 **/tsconfig.json
 **/.eslintrc.json
 **/*.map
+**/*.ts
+node_modules/**
+backend/**
+CLAUDE.md
+.git/**
