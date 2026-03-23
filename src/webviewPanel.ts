@@ -11,22 +11,19 @@ export interface WebviewOutgoingMessage {
   contextInfo?: string;
 }
 
-function getNonce(): string {
-  let text = '';
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  for (let i = 0; i < 32; i++) {
-    text += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return text;
-}
-
 export class AdvisorPanel {
   private _webview: vscode.Webview;
 
-  constructor(webview: vscode.Webview) {
+  constructor(webview: vscode.Webview, extensionUri: vscode.Uri) {
     this._webview = webview;
-    this._webview.options = { enableScripts: true };
-    this._webview.html = this._getHtml(getNonce());
+    this._webview.options = {
+      enableScripts: true,
+      localResourceRoots: [vscode.Uri.joinPath(extensionUri, 'media')],
+    };
+    const scriptUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(extensionUri, 'media', 'webview.js')
+    );
+    this._webview.html = this._getHtml(scriptUri, webview.cspSource);
   }
 
   post(msg: WebviewOutgoingMessage): void { this._webview.postMessage(msg); }
@@ -41,13 +38,13 @@ export class AdvisorPanel {
     return this._webview.onDidReceiveMessage(handler);
   }
 
-  private _getHtml(nonce: string): string {
+  private _getHtml(scriptUri: vscode.Uri, cspSource: string): string {
     return /* html */`<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline';" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src ${cspSource};" />
   <title>Let's Code Ourselves</title>
   <style>
     :root {
@@ -243,12 +240,12 @@ export class AdvisorPanel {
 
   <div class="context-bar" id="ctx-bar">
     <span id="ctx-label"></span>
-    <button id="ctx-close" title="Remove context">✕</button>
+    <button id="ctx-close" title="Remove context">&#x2715;</button>
   </div>
 
   <div class="messages" id="messages">
     <div class="empty" id="empty-state">
-      <div class="empty-icon">🧠</div>
+      <div class="empty-icon">&#x1F9E0;</div>
       <div>Ask about your code, a bug, a library, or an approach.</div>
       <div>Attach a file or selection for context.</div>
     </div>
@@ -256,215 +253,17 @@ export class AdvisorPanel {
 
   <div class="input-area">
     <div class="input-row">
-      <textarea
-        id="input"
-        placeholder="What are you working on?"
-        rows="1"
-      ></textarea>
+      <textarea id="input" placeholder="What are you working on?" rows="1"></textarea>
       <button class="send-btn" id="send-btn">Send</button>
     </div>
     <div class="action-row">
-      <button class="action-btn" id="btn-attach-file">📄 Attach file</button>
-      <button class="action-btn" id="btn-attach-sel">✂️ Attach selection</button>
-      <button class="action-btn" id="btn-clear">🗑 Clear</button>
+      <button class="action-btn" id="btn-attach-file">&#x1F4C4; Attach file</button>
+      <button class="action-btn" id="btn-attach-sel">&#x2702; Attach selection</button>
+      <button class="action-btn" id="btn-clear">&#x1F5D1; Clear</button>
     </div>
   </div>
 
-  <script>
-    const vscode = acquireVsCodeApi();
-    let isStreaming = false;
-    let streamingEl = null;
-    let rawBuffer = '';
-
-    function sendMessage() {
-      const input = document.getElementById('input');
-      const text = input.value.trim();
-      if (!text || isStreaming) return;
-      hideEmpty();
-      appendUserMessage(text);
-      input.value = '';
-      autoResize(input);
-      vscode.postMessage({ type: 'sendMessage', text });
-    }
-
-    function handleKey(e) {
-      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
-    }
-
-    function autoResize(el) {
-      el.style.height = 'auto';
-      el.style.height = Math.min(el.scrollHeight, 120) + 'px';
-    }
-
-    function attachFile()      { vscode.postMessage({ type: 'attachFile' }); }
-    function attachSelection() { vscode.postMessage({ type: 'attachSelection' }); }
-    function clearContext()    {
-      document.getElementById('ctx-bar').classList.remove('visible');
-    }
-    function clearChat() {
-      vscode.postMessage({ type: 'clearChat' });
-      const msgs = document.getElementById('messages');
-      msgs.innerHTML = '';
-      const empty = document.createElement('div');
-      empty.className = 'empty';
-      empty.id = 'empty-state';
-      const icon = document.createElement('div');
-      icon.className = 'empty-icon';
-      icon.textContent = '\uD83E\uDDE0';
-      const t1 = document.createElement('div');
-      t1.textContent = 'Ask about your code, a bug, a library, or an approach.';
-      const t2 = document.createElement('div');
-      t2.textContent = 'Attach a file or selection for context.';
-      empty.appendChild(icon);
-      empty.appendChild(t1);
-      empty.appendChild(t2);
-      msgs.appendChild(empty);
-    }
-
-    function hideEmpty() {
-      const el = document.getElementById('empty-state');
-      if (el) el.remove();
-    }
-
-    function appendUserMessage(text) {
-      const msgs = document.getElementById('messages');
-      const div = document.createElement('div');
-      div.className = 'msg user';
-      div.textContent = text;
-      msgs.appendChild(div);
-      scrollBottom();
-    }
-
-    function startMentorMessage() {
-      const msgs = document.getElementById('messages');
-      const div = document.createElement('div');
-      div.className = 'msg mentor';
-      rawBuffer = '';
-      const cursor = document.createElement('span');
-      cursor.className = 'cursor';
-      div.appendChild(cursor);
-      msgs.appendChild(div);
-      streamingEl = div;
-      scrollBottom();
-    }
-
-    function appendToMentor(text) {
-      if (!streamingEl) return;
-      rawBuffer += text;
-      const cursor = streamingEl.querySelector('.cursor');
-      streamingEl.innerHTML = renderMarkdown(rawBuffer);
-      if (cursor) streamingEl.appendChild(cursor);
-      scrollBottom();
-    }
-
-    function finalizeMentor() {
-      if (!streamingEl) return;
-      const cursor = streamingEl.querySelector('.cursor');
-      if (cursor) cursor.remove();
-      streamingEl = null;
-    }
-
-    function showError(message) {
-      const msgs = document.getElementById('messages');
-      const div = document.createElement('div');
-      div.className = 'msg error';
-      div.textContent = message;
-      msgs.appendChild(div);
-      scrollBottom();
-    }
-
-    function setStreaming(val) {
-      isStreaming = val;
-      document.getElementById('send-btn').disabled = val;
-      document.getElementById('input').disabled = val;
-    }
-
-    function scrollBottom() {
-      const msgs = document.getElementById('messages');
-      msgs.scrollTop = msgs.scrollHeight;
-    }
-
-    // Minimal markdown: headings, bold, lists - intentionally no code block rendering
-    // NOTE: closing tags split as '<' + '/tag>' to avoid confusing the HTML parser
-    function renderMarkdown(raw) {
-      const lines = raw.split('\n');
-      const out = [];
-      let inList = false;
-      for (let i = 0; i < lines.length; i++) {
-        let line = lines[i];
-        if (/^- /.test(line)) {
-          if (!inList) { out.push('<ul>'); inList = true; }
-          out.push('<li>' + line.slice(2) + '<' + '/li>');
-        } else {
-          if (inList) { out.push('<' + '/ul>'); inList = false; }
-          line = line
-            .replace(/^### (.+)$/, function(_, t) { return '<h3>' + t + '<' + '/h3>'; })
-            .replace(/^## (.+)$/,  function(_, t) { return '<h2>' + t + '<' + '/h2>'; })
-            .replace(/^# (.+)$/,   function(_, t) { return '<h2>' + t + '<' + '/h2>'; })
-            .replace(/\*\*(.+?)\*\*/g, function(_, t) { return '<strong>' + t + '<' + '/strong>'; });
-          out.push(line);
-        }
-      }
-      if (inList) out.push('<' + '/ul>');
-      return out.join('\n');
-    }
-
-    // Wire up all buttons with addEventListener (no inline onclick)
-    try {
-      const inputEl = document.getElementById('input');
-      inputEl.addEventListener('keydown', handleKey);
-      inputEl.addEventListener('input', function() { autoResize(this); });
-      document.getElementById('send-btn').addEventListener('click', sendMessage);
-      document.getElementById('ctx-close').addEventListener('click', clearContext);
-      document.getElementById('btn-attach-file').addEventListener('click', attachFile);
-      document.getElementById('btn-attach-sel').addEventListener('click', attachSelection);
-      document.getElementById('btn-clear').addEventListener('click', clearChat);
-      console.log('[LDO] Event listeners registered OK');
-    } catch (err) {
-      console.error('[LDO] Failed to register event listeners:', err);
-      const errDiv = document.createElement('div');
-      errDiv.className = 'msg error';
-      errDiv.style.margin = '12px';
-      errDiv.textContent = 'JS error: ' + err.message;
-      document.getElementById('messages').appendChild(errDiv);
-    }
-
-    window.addEventListener('message', e => {
-      const msg = e.data;
-      switch (msg.type) {
-        case 'streamStart':
-          setStreaming(true);
-          startMentorMessage();
-          break;
-        case 'streamChunk':
-          appendToMentor(msg.text);
-          break;
-        case 'replaceMessage':
-          if (streamingEl) {
-            rawBuffer = msg.text || '';
-            const cursor = streamingEl.querySelector('.cursor');
-            streamingEl.innerHTML = renderMarkdown(rawBuffer);
-            if (cursor) streamingEl.appendChild(cursor);
-            scrollBottom();
-          }
-          break;
-        case 'streamDone':
-          finalizeMentor();
-          setStreaming(false);
-          break;
-        case 'error':
-          finalizeMentor();
-          showError(msg.text);
-          setStreaming(false);
-          break;
-        case 'contextAttached':
-          document.getElementById('ctx-label').textContent = '\uD83D\uDCCE ' + msg.contextInfo;
-          document.getElementById('ctx-bar').classList.add('visible');
-          hideEmpty();
-          break;
-      }
-    });
-  </script>
+  <script src="${scriptUri}"></script>
 </body>
 </html>`;
   }

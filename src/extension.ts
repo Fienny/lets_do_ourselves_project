@@ -24,7 +24,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   const provider: vscode.WebviewViewProvider = {
     resolveWebviewView(webviewView: vscode.WebviewView) {
-      panel = new AdvisorPanel(webviewView.webview);
+      panel = new AdvisorPanel(webviewView.webview, context.extensionUri);
 
       panel.onMessage((msg) => {
         switch (msg.type) {
